@@ -183,7 +183,7 @@ struct StorageView: View {
 }
 struct ApplicationsView: View {
     @EnvironmentObject var model: AppModel
-    
+
     var entries: [ScanEntry] { model.applications.filter { model.appQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(model.appQuery) } }
     var body: some View {
         PageHeading(title: "留下真正需要的。", subtitle: "先了解应用的占用。系统应用、关联文件与运行状态保持完整。")
@@ -196,7 +196,7 @@ struct ApplicationsView: View {
 }
 struct CompanionView: View {
     @EnvironmentObject var model: AppModel
-    
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         PageHeading(title: "每一种神情，都在身边。", subtitle: "23 张参考，23 个陪伴时刻。细微的变化，也认真保留。")

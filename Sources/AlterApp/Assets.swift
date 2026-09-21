@@ -10,7 +10,23 @@ struct Expression: Decodable, Identifiable {
     let file: String
 }
 enum Assets {
-    static var root: URL { Bundle.module.resourceURL!.appendingPathComponent("Resources") }
+    // SwiftPM's native and Xcode build systems lay out resource bundles differently.
+    // Prefer only resources physically inside the installed app before development fallbacks.
+    static let root: URL = {
+        let appBases = [Bundle.main.resourceURL, Bundle.main.bundleURL].compactMap { $0 }
+        let suffixes = ["Alter_AlterApp.bundle/Contents/Resources/Resources", "Alter_AlterApp.bundle/Resources", "Alter_AlterApp.bundle/Contents/Resources"]
+        for base in appBases {
+            for suffix in suffixes {
+                let candidate = base.appendingPathComponent(suffix)
+                if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("Expressions/expressions.json").path) { return candidate }
+            }
+        }
+        let bundle = Bundle.module
+        for candidate in [bundle.bundleURL.appendingPathComponent("Resources"), bundle.bundleURL.appendingPathComponent("Contents/Resources/Resources"), bundle.resourceURL?.appendingPathComponent("Resources")].compactMap({ $0 }) {
+            if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("Expressions/expressions.json").path) { return candidate }
+        }
+        return Bundle.main.bundleURL.appendingPathComponent("MissingAlterResources")
+    }()
     static let expressions: [Expression] = {
         guard let data = try? Data(contentsOf: root.appendingPathComponent("Expressions/expressions.json")), let result = try? JSONDecoder().decode([Expression].self, from: data) else { return [] }
         return result
