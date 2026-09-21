@@ -17,5 +17,5 @@ output="dist/Alter-${version}-${arch}.dmg"
 [[ ! -e "$output" ]] || { echo 'DMG already exists; refusing overwrite'; exit 1; }
 hdiutil create -volname Alter -srcfolder "$stage" -format UDZO -ov "$output"
 hdiutil verify "$output"
-shasum -a 256 "$output" > "$output.sha256"
+(cd dist && shasum -a 256 "Alter-${version}-${arch}.dmg") > "$output.sha256"
 echo "Packaged $output"

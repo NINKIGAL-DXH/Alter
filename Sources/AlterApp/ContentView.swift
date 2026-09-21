@@ -278,7 +278,7 @@ struct SettingsView: View {
                 Text("Mole V1.55.0 保护内核 · 原生 SwiftUI 界面").font(.system(size: 12))
                 Text("使用 tw93/Mole 的路径与应用保护模块，GPL-3.0。Alter 是独立衍生项目，非 Mole 官方应用，无官方背书。扫描与可恢复移动由 Alter 的有界适配层负责。").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
                 HStack(spacing: 18) { Link("Mole 源项目", destination: URL(string: "https://github.com/tw93/Mole/tree/69ab325d4f05af0ea21aeeeae544046c9f04a76b")!); Link("Apple 材质指南", destination: URL(string: "https://developer.apple.com/design/human-interface-guidelines/materials")!); Button("许可证") { model.reveal(Assets.root.appendingPathComponent("Mole/LICENSE").path) }.buttonStyle(.plain) }.font(.system(size: 11)).foregroundStyle(wine)
-                Text("角色图片由用户提供，仅用于私人原型。角色与原作权利归原权利人，不属于 GPL 代码授权。").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("角色图片由用户提供；角色与原作权利归原权利人，不属于 GPL 代码授权。").font(.system(size: 10)).foregroundStyle(.secondary)
             }
         }.contentPanel()
     }

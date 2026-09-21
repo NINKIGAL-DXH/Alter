@@ -2,7 +2,6 @@ name: Build and verify macOS DMG
 on:
   push:
     branches: [main, 'codex/**']
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -39,18 +38,5 @@ jobs:
         run: |
           ./scripts/build.sh
           ./scripts/make-dmg.sh
-      - name: Upload DMG and checksum
-        uses: actions/upload-artifact@v4
-        with:
-          name: Alter-0.1.0-${{ matrix.arch }}
-          path: |
-            dist/Alter-*.dmg
-            dist/Alter-*.sha256
-          retention-days: 30
-      - name: Export corresponding source
-        run: git archive --format=tar.gz -o dist/Alter-0.1.0-source.tar.gz HEAD
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Alter-source-${{ matrix.arch }}
-          path: dist/Alter-0.1.0-source.tar.gz
-          retention-days: 30
+      - name: Build summary
+        run: echo 'Both test and DMG integrity checks passed. Download published versions from Releases.' >> "$GITHUB_STEP_SUMMARY"

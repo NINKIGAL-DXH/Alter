@@ -15,7 +15,7 @@ Mole's name and logo remain its project's trademarks. Alter uses its own name an
 
 ## Character artwork
 
-The 23 supplied screenshots and the supplied app portrait depict Jeanne d'Arc Alter from the Fate franchise. They are user-provided reference assets for a private personal build. The original game/character/artwork rights remain with their respective owners. These assets are excluded from the GPL license applied to code. No ownership or blanket redistribution permission is asserted.
+The 23 supplied screenshots and the supplied app portrait depict Jeanne d'Arc Alter from the Fate franchise. They are user-provided reference assets used by this independently developed fan project. Public availability of this repository does not grant additional rights to the character artwork. The original game/character/artwork rights remain with their respective owners. These assets are excluded from the GPL license applied to code. No ownership or blanket redistribution permission is asserted.
 
 ## Apple
 
