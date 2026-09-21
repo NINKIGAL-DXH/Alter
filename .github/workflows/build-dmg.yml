@@ -1,0 +1,56 @@
+name: Build and verify macOS DMG
+on:
+  push:
+    branches: [main, 'codex/**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: alter-dmg-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-26-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Xcode 26 or newer
+        run: |
+          candidate=$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' | sort -V | tail -1)
+          if [ -n "$candidate" ]; then echo "DEVELOPER_DIR=$candidate/Contents/Developer" >> "$GITHUB_ENV"; fi
+          xcodebuild -version
+      - name: Verify upstream integrity and resources
+        run: python3 scripts/verify.py
+      - name: Run safety tests in disposable fixtures
+        run: swift test --jobs 2
+      - name: Package signed app and verified DMG
+        env:
+          ALTER_ARCH: ${{ matrix.arch }}
+        run: |
+          ./scripts/build.sh
+          ./scripts/make-dmg.sh
+      - name: Upload DMG and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alter-0.1.0-${{ matrix.arch }}
+          path: |
+            dist/Alter-*.dmg
+            dist/Alter-*.sha256
+          retention-days: 30
+      - name: Export corresponding source
+        run: git archive --format=tar.gz -o dist/Alter-0.1.0-source.tar.gz HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Alter-source-${{ matrix.arch }}
+          path: dist/Alter-0.1.0-source.tar.gz
+          retention-days: 30

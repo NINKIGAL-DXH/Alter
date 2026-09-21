@@ -1,0 +1,17 @@
+{
+  "project": "Mole",
+  "url": "https://github.com/tw93/Mole",
+  "version": "V1.55.0",
+  "commit": "69ab325d4f05af0ea21aeeeae544046c9f04a76b",
+  "license": "GPL-3.0",
+  "integration": "Unmodified path and application protection core; no upstream deletion or optimization entrypoint is shipped.",
+  "sha256": {
+    "lib/core/base.sh": "688cb144158f0689cc85d4efe39e14fde98574b842f12539bc02661334f73626",
+    "lib/core/app_protection.sh": "4e425b2c1ed278bf5911c6ab8c6332cec813f73930ccf228439c4bb8d81b57bd",
+    "lib/core/app_protection_data.sh": "0aa1b21cc6cbdb625c22f543a8eb23081b6c9bfccaf268993954973143507db7",
+    "lib/core/timeout.sh": "0a0282bd642785bc42d76176ef1eeff6da845add91e5aee797029c6ec54ded72",
+    "lib/core/timeouts.sh": "748c28893364bac936ee246ad95dae70227a71b6c037610c3aa4614c845172a3",
+    "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "TRADEMARK.md": "1fcec26032ccf24cb9ab00f699cc47c0ecdb4268b8c1e684173ff4faf6931721"
+  }
+}

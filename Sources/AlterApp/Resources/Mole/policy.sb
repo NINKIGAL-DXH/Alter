@@ -1,0 +1,10 @@
+(version 1)
+(allow default)
+(deny network*)
+(deny file-write*)
+(allow file-write* (literal "/dev/null"))
+(deny process-exec)
+(allow process-exec (literal "/bin/bash") (literal "/usr/bin/dirname") (literal "/usr/bin/tr") (literal "/usr/bin/stat"))
+; Bash sources the module and runs tiny read-only predicates. Command substitutions
+; need fork; executable spawning is separately allowlisted above.
+(allow process-fork)
