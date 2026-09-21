@@ -12,10 +12,10 @@ The native, bounded Swift scanner and reversible move/restore adapter are Alter 
 
 ## Interface
 
-- Native sidebar and toolbar; SwiftUI `glass` / `glassProminent` buttons on macOS 26+.
+- Native sidebar and toolbar; SwiftUI clear interactive glass / `glassProminent` buttons on macOS 26+.
 - Readable standard-material content, with Reduce Transparency and Reduce Motion support.
 - Large character panels on both cleanup and space-details pages.
-- All 23 supplied expressions, each with a contextual caption and manual preview.
+- All 23 supplied expressions, each with a contextual caption and manual preview. Per-image display cropping removes captured black/blue borders and the white home indicator; original references are preserved.
 - System/light/dark appearance, optional companion, bounded thumbnail cache.
 - The approved original HTML is preserved as `ui-preview/Alter.html`; `ui-preview/Alter-glass.html` is the updated portable design preview. These HTML files contain only demonstration data. The native application uses actual local metadata and does not fabricate results.
 

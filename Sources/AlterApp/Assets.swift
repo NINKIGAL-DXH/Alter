@@ -8,13 +8,15 @@ struct Expression: Decodable, Identifiable {
     let state: String
     let quote: String
     let file: String
+    /// Normalized top-left content rectangle, excluding captured game chrome.
+    let crop: [Double]
 }
 enum Assets {
     // SwiftPM's native and Xcode build systems lay out resource bundles differently.
     // Prefer only resources physically inside the installed app before development fallbacks.
     static let root: URL = {
         let appBases = [Bundle.main.resourceURL, Bundle.main.bundleURL].compactMap { $0 }
-        let suffixes = ["Alter_AlterApp.bundle/Contents/Resources/Resources", "Alter_AlterApp.bundle/Resources", "Alter_AlterApp.bundle/Contents/Resources"]
+        let suffixes = ["AlterAssets", "Alter_AlterApp.bundle/Contents/Resources/Resources", "Alter_AlterApp.bundle/Resources", "Alter_AlterApp.bundle/Contents/Resources"]
         for base in appBases {
             for suffix in suffixes {
                 let candidate = base.appendingPathComponent(suffix)
@@ -40,7 +42,16 @@ enum Assets {
         let url = root.appendingPathComponent(relative)
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: pixels, kCGImageSourceShouldCacheImmediately: true, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { return nil }
-        let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        var rendered = cg
+        if let expression = expressions.first(where: { relative == "Expressions/" + $0.file }), expression.crop.count == 4 {
+            let c = expression.crop
+            let bounds = CGRect(x: c[0] * Double(cg.width), y: c[1] * Double(cg.height), width: c[2] * Double(cg.width), height: c[3] * Double(cg.height))
+            // Crop the bounded thumbnail; original reference files stay intact.
+            let inner = CGRect(x: ceil(bounds.minX), y: ceil(bounds.minY), width: floor(bounds.maxX) - ceil(bounds.minX), height: floor(bounds.maxY) - ceil(bounds.minY))
+            guard let cropped = cg.cropping(to: inner) else { return nil }
+            rendered = cropped
+        }
+        let image = NSImage(cgImage: rendered, size: NSSize(width: rendered.width, height: rendered.height))
         cache.setObject(image, forKey: key, cost: cg.bytesPerRow * cg.height)
         return image
     }
@@ -67,7 +78,8 @@ struct GlassAction: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) var reduceTransparency
     @ViewBuilder func body(content: Content) -> some View {
         if #available(macOS 26.0, *), !reduceTransparency {
-            if prominent { content.buttonStyle(.glassProminent) } else { content.buttonStyle(.glass) }
+            if prominent { content.buttonStyle(.glassProminent) }
+            else { content.buttonStyle(.plain).padding(.horizontal, 13).padding(.vertical, 7).glassEffect(.clear.interactive(), in: .capsule) }
         } else {
             if prominent { content.buttonStyle(.borderedProminent) } else { content.buttonStyle(.bordered) }
         }
@@ -75,5 +87,16 @@ struct GlassAction: ViewModifier {
 }
 extension View {
     func glassAction(prominent: Bool = false) -> some View { modifier(GlassAction(prominent: prominent)) }
-    func contentPanel() -> some View { padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)) }
+    func contentPanel() -> some View { padding(22).panelSurface() }
+    func panelSurface(radius: CGFloat = 20) -> some View { modifier(PanelSurface(radius: radius)) }
+}
+struct PanelSurface: ViewModifier {
+    var radius: CGFloat
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    func body(content: Content) -> some View {
+        content.background {
+            if reduceTransparency { RoundedRectangle(cornerRadius: radius).fill(Color(nsColor: .controlBackgroundColor)) }
+            else { RoundedRectangle(cornerRadius: radius).fill(.ultraThinMaterial) }
+        }.overlay { RoundedRectangle(cornerRadius: radius).strokeBorder(.white.opacity(reduceTransparency ? 0 : 0.18), lineWidth: 0.6) }
+    }
 }

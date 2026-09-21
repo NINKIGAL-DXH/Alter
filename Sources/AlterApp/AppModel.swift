@@ -131,15 +131,17 @@ enum AppPage: String, CaseIterable, Identifiable {
                 try history.save(records)
                 let allowed = try await Task.detached(priority: .utility) { try policy.review(plan.entries.map(\.path), cancellation: flag) }.value
                 guard allowed.allSatisfy({ $0 }), !flag.isCancelled else { throw AlterError.refused("Mole 复核拒绝或操作取消；文件保持原位。") }
+                var movedCount = 0
                 for item in plan.entries {
                     if flag.isCancelled { break }
                     let record = try await Task.detached(priority: .utility) { try trash.move(item, planCreated: plan.created) }.value
                     records.insert(record, at: 0)
+                    movedCount += 1
                     do { try history.save(records) }
                     catch { throw AlterError.refused("文件已移入废纸篓，但记录保存失败；已停止后续操作。请在废纸篓查看 \(record.trashName)。") }
                     installers.removeAll { $0.id == item.id }; selected.remove(item.id)
                 }
-                activity = "所选安装包已移入废纸篓，可从操作记录恢复。"; expression = 22
+                activity = "已将 \(movedCount) / \(plan.entries.count) 项移入废纸篓，可从操作记录恢复。" + (flag.isCancelled ? "其余项目已停止处理。" : ""); expression = 22
             } catch { errorMessage = error.localizedDescription; activity = "操作已停止，请查看说明。"; expression = 13 }
             busy = false; refreshCapacity()
         }

@@ -6,11 +6,12 @@ import AppKit
     init() {
         if CommandLine.arguments.contains("--smoke-test") {
             guard Assets.expressions.count == 23,
+                  Assets.expressions.allSatisfy({ Assets.image("Expressions/" + $0.file, pixels: 160) != nil }),
                   Assets.image("Brand/Alter.png", pixels: 64) != nil,
                   FileManager.default.fileExists(atPath: Assets.root.appendingPathComponent("Mole/UPSTREAM.json").path) else {
                 fputs("Alter bundle resource verification failed\n", stderr); exit(1)
             }
-            print("Alter bundle verified: 23 expressions, supplied icon, pinned Mole core.")
+            print("Alter bundle verified: 23 cropped expressions, supplied icon, pinned Mole core.")
             exit(0)
         }
     }

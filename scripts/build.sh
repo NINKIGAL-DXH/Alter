@@ -5,8 +5,8 @@ version="${ALTER_VERSION:-0.1.0}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][a-zA-Z0-9]+)*$ ]] || { echo 'Invalid version'; exit 1; }
 arch="${ALTER_ARCH:-$(uname -m)}"
 [[ "$arch" == arm64 || "$arch" == x86_64 ]] || exit 1
-swift build -c release --arch "$arch" --jobs 2
-bin_dir=$(swift build -c release --arch "$arch" --show-bin-path)
+swift build --build-system native -c release --arch "$arch" --jobs 2
+bin_dir=$(swift build --build-system native -c release --arch "$arch" --show-bin-path)
 destination="dist/$arch/Alter.app"
 [[ ! -e "$destination" ]] || { echo "Staging already exists: $destination"; exit 1; }
 staging=$(mktemp -d "${TMPDIR:-/tmp}/alter-build.XXXXXX")
@@ -16,6 +16,7 @@ app="$staging/Alter.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_dir/Alter" "$app/Contents/MacOS/Alter"
 cp -RX "$bin_dir/Alter_AlterApp.bundle" "$app/Contents/Resources/"
+cp -RX Sources/AlterApp/Resources "$app/Contents/Resources/AlterAssets"
 iconset=$(mktemp -d "${TMPDIR:-/tmp}/alter-icon.XXXXXX")
 mkdir "$iconset/Alter.iconset"
 for size in 16 32 128 256 512; do

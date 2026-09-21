@@ -15,6 +15,9 @@ assert len({hashlib.sha256((expressions / e['file']).read_bytes()).hexdigest() f
 for e in records:
     assert (expressions / e['file']).read_bytes().startswith(b'\xff\xd8\xff')
     assert e['quote'] and e['state']
+    x, y, w, h = e['crop']
+    assert 0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1
+    assert x + w <= 1.000001 and y + h <= 1.000001
 assert (root / 'Sources/AlterApp/Resources/Brand/Alter.png').read_bytes().startswith(b'\x89PNG')
 # Ensure no full Mole mutation entrypoints accidentally enter the distributable.
 assert not (mole / 'bin').exists()

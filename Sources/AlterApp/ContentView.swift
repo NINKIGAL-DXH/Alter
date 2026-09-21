@@ -37,7 +37,7 @@ struct ContentView: View {
                     HStack { Label("本地处理 · 无管理员权限", systemImage: "lock.shield"); Spacer(); Text("Mole V1.55.0 · Alter 0.1.0") }.font(.system(size: 10)).foregroundStyle(.secondary).padding(.top, 8)
                 }.padding(30).frame(maxWidth: 1150).frame(maxWidth: .infinity)
             }
-            .background { LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), wine.opacity(0.045), Color.purple.opacity(0.035)], startPoint: .topLeading, endPoint: .bottomTrailing) }
+            .background { LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), wine.opacity(0.11), Color.purple.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing) }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 10) {
                     if model.busy { ProgressView().controlSize(.small) } else { Image(systemName: "checkmark.shield").foregroundStyle(.secondary) }
@@ -85,7 +85,7 @@ struct OverviewView: View {
         PageHeading(title: "给 Mac，留一点余裕。", subtitle: "整理空间，也整理开始下一件事的心情。")
         ZStack(alignment: .leading) {
             if model.companionVisible { GeometryReader { g in ExpressionImage(number: model.heroExpression).frame(width: g.size.width * 0.60, height: 290).clipped().frame(maxWidth: .infinity, alignment: .trailing) } }
-            LinearGradient(stops: [.init(color: Color(red: 0.17, green: 0.14, blue: 0.21), location: 0), .init(color: Color(red: 0.17, green: 0.14, blue: 0.21).opacity(0.94), location: 0.36), .init(color: .clear, location: 0.9)], startPoint: .leading, endPoint: .trailing)
+            LinearGradient(stops: [.init(color: Color(red: 0.17, green: 0.14, blue: 0.21), location: 0), .init(color: Color(red: 0.17, green: 0.14, blue: 0.21).opacity(0.80), location: 0.36), .init(color: .clear, location: 0.9)], startPoint: .leading, endPoint: .trailing)
             VStack(alignment: .leading, spacing: 16) {
                 Text("A LITTLE LESS. A LITTLE LIGHTER.").font(.system(size: 9, weight: .semibold)).tracking(2).foregroundStyle(Color(red: 0.81, green: 0.65, blue: 0.49))
                 Text("把空间还给热爱。").font(.system(size: 31, weight: .medium)).foregroundStyle(.white)
@@ -118,7 +118,7 @@ struct OverviewView: View {
 struct QuickTile: View {
     let title: String, subtitle: String, icon: String
     let action: () -> Void
-    var body: some View { Button(action: action) { HStack(spacing: 11) { Image(systemName: icon).font(.system(size: 22)).foregroundStyle(wine.opacity(0.75)); VStack(alignment: .leading, spacing: 5) { Text(title).font(.system(size: 12, weight: .medium)); Text(subtitle).font(.system(size: 10)).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(.tertiary) }.padding(18).frame(maxWidth: .infinity).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) }.buttonStyle(.plain) }
+    var body: some View { Button(action: action) { HStack(spacing: 11) { Image(systemName: icon).font(.system(size: 22)).foregroundStyle(wine.opacity(0.75)); VStack(alignment: .leading, spacing: 5) { Text(title).font(.system(size: 12, weight: .medium)); Text(subtitle).font(.system(size: 10)).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(.tertiary) }.padding(18).frame(maxWidth: .infinity).panelSurface(radius: 16) }.buttonStyle(.plain) }
 }
 struct CleanView: View {
     @EnvironmentObject var model: AppModel
@@ -167,7 +167,7 @@ struct FileRow: View {
 }
 struct EmptyState: View {
     let icon: String, title: String, detail: String
-    var body: some View { VStack(spacing: 13) { Image(systemName: icon).font(.system(size: 30, weight: .light)).foregroundStyle(wine.opacity(0.6)); Text(title).font(.system(size: 15, weight: .medium)); Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center) }.padding(40).frame(maxWidth: .infinity).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)) }
+    var body: some View { VStack(spacing: 13) { Image(systemName: icon).font(.system(size: 30, weight: .light)).foregroundStyle(wine.opacity(0.6)); Text(title).font(.system(size: 15, weight: .medium)); Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center) }.padding(40).frame(maxWidth: .infinity).panelSurface() }
 }
 struct StorageView: View {
     @EnvironmentObject var model: AppModel
@@ -201,14 +201,14 @@ struct CompanionView: View {
     var body: some View {
         PageHeading(title: "每一种神情，都在身边。", subtitle: "23 张参考，23 个陪伴时刻。细微的变化，也认真保留。")
         VStack(spacing: 0) {
-            ExpressionImage(number: model.expression, pixels: 1000, fit: .fit).frame(height: 350).frame(maxWidth: .infinity).background(Color.black.opacity(0.85)).clipped()
+            ExpressionImage(number: model.expression, pixels: 1000, fit: .fit).frame(height: 350).frame(maxWidth: .infinity).panelSurface(radius: 0).clipped()
             HStack {
                 VStack(alignment: .leading, spacing: 8) { Text(model.currentExpression?.name ?? "Alter").font(.system(size: 19, weight: .medium)); Text(model.currentExpression?.quote ?? "").font(.system(size: 12)).foregroundStyle(.secondary); Text("场景 / " + (model.currentExpression?.state ?? "")).font(.system(size: 10)).foregroundStyle(wine) }
                 Spacer()
                 Button { model.expressionsPlaying = false; model.expression = model.expression == 1 ? 23 : model.expression - 1 } label: { Image(systemName: "chevron.left") }.glassAction().accessibilityLabel("上一个表情")
                 Button(model.expressionsPlaying ? "暂停" : "依次预览") { model.expressionsPlaying.toggle() }.glassAction().disabled(reduceMotion)
                 Button { model.expressionsPlaying = false; model.expression = model.expression % 23 + 1 } label: { Image(systemName: "chevron.right") }.glassAction().accessibilityLabel("下一个表情")
-            }.padding(23).background(.regularMaterial)
+            }.padding(23).panelSurface(radius: 0)
         }.clipShape(RoundedRectangle(cornerRadius: 20))
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 14)], spacing: 14) {
             ForEach(Assets.expressions) { ex in
@@ -217,7 +217,7 @@ struct CompanionView: View {
                         ExpressionImage(number: ex.id, pixels: 360).frame(height: 110).clipped()
                         Text(String(format: "%02d", ex.id) + "  " + ex.name).font(.system(size: 11, weight: .medium)).padding(.horizontal, 12)
                         Text(ex.state).font(.system(size: 9)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.bottom, 12)
-                    }.background(.regularMaterial).clipShape(RoundedRectangle(cornerRadius: 12)).overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(model.expression == ex.id ? wine : .clear, lineWidth: 2) }
+                    }.panelSurface(radius: 0).clipShape(RoundedRectangle(cornerRadius: 12)).overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(model.expression == ex.id ? wine : .clear, lineWidth: 2) }
                 }.buttonStyle(.plain)
             }
         }
