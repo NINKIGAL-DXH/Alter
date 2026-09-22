@@ -183,6 +183,18 @@ final class SafetyTests: XCTestCase {
         XCTAssertTrue(result.candidates.contains { $0.path == app.path })
         XCTAssertTrue(FileManager.default.fileExists(atPath: app.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: related.path))
+        // Verify the complete discovery -> policy -> move -> restore path,
+        // exclusively for these app-created, disposable fixture directories.
+        let artifact = artifacts.candidates.first { $0.path == project.appendingPathComponent("node_modules").path }!
+        let application = result.candidates.first { $0.path == app.path }!
+        XCTAssertEqual(try ops.review([artifact.path, application.path], cancellation: CancellationFlag()), [true, true])
+        for candidate in [artifact, application] {
+            let reviewed = try ReviewedRemoval.snapshot(candidate, home: home.path, cancellation: CancellationFlag())
+            let record = try ReviewedRemoval.move(reviewed, home: home.path, created: Date(), cancellation: CancellationFlag())
+            XCTAssertFalse(FileManager.default.fileExists(atPath: candidate.path))
+            try TrashService(home: home.path).restore(record)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: candidate.path))
+        }
     }
     func testRealMoleCleanPreviewNeverChangesFixture() throws {
         let cache = home.appendingPathComponent("Library/Caches/io.alter.cleanfixture")

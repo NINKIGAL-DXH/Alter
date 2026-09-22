@@ -78,7 +78,7 @@ public struct MoleOperations: Sendable {
         let job = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("alter-plan-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: job, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer { MoleReader.clearJob(job) }
-        let environment = ["HOME": home, "USER": NSUserName(), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR": job.path, "LC_ALL": "C", "MOLE_DRY_RUN": "1", "MOLE_TEST_NO_AUTH": "1", "MO_NO_OPLOG": "1"]
+        let environment = ["HOME": home, "USER": NSUserName(), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin", "TMPDIR": job.path, "LC_ALL": "C", "HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_ANALYTICS": "1", "HOMEBREW_NO_INSTALL_CLEANUP": "1", "MOLE_DRY_RUN": "1", "MOLE_TEST_NO_AUTH": "1", "MO_NO_OPLOG": "1"]
         // macOS refuses the set-id /bin/ps executable inside Seatbelt. Capture a
         // fresh read-only table outside it; the unchanged Mole guard still decides
         // whether an owner is live, unknown, or idle. Never print this private table.
