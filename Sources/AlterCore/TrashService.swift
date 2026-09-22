@@ -9,6 +9,7 @@ public struct TrashRecord: Codable, Identifiable, Sendable {
     public let bytes: Int64
     public let identity: FileIdentity
     public var restored: Bool = false
+    public var reviewed: Bool? = nil
 }
 public struct RemovalPlan: Sendable {
     public let created: Date
@@ -51,14 +52,14 @@ public struct TrashService: Sendable {
         return TrashRecord(id: id, date: now, originalPath: entry.path, trashName: trashName, bytes: entry.bytes, identity: FileSafety.identity(moved))
     }
     public func restore(_ record: TrashRecord) throws {
-        guard geteuid() != 0, !record.restored, record.trashName.hasPrefix("Alter-"), !record.trashName.contains("/"), record.originalPath.hasPrefix(home + "/Downloads/"), FileSafety.validPath(record.originalPath) else { throw AlterError.refused("恢复记录无效。") }
+        guard geteuid() != 0, !record.restored, record.trashName.hasPrefix("Alter-"), !record.trashName.contains("/"), (record.reviewed == true ? ReviewedRemoval.allowedScope(record.originalPath, home: home) : record.originalPath.hasPrefix(home + "/Downloads/")), FileSafety.validPath(record.originalPath) else { throw AlterError.refused("恢复记录无效。") }
         let trash = try checkedTrash(); defer { close(trash) }
         var info = stat()
-        guard fstatat(trash, record.trashName, &info, AT_SYMLINK_NOFOLLOW) == 0, FileSafety.regular(info), info.st_uid == getuid(), info.st_nlink == 1, FileSafety.identity(info) == record.identity else { throw AlterError.refused("废纸篓项目已变化或已移除，无法自动恢复。") }
+        guard fstatat(trash, record.trashName, &info, AT_SYMLINK_NOFOLLOW) == 0, (FileSafety.regular(info) || (record.reviewed == true && FileSafety.directory(info))), (!FileSafety.regular(info) || info.st_nlink == 1), FileSafety.identity(info) == record.identity else { throw AlterError.refused("废纸篓项目已变化或已移除，无法自动恢复。") }
         let original = URL(fileURLWithPath: record.originalPath)
         let parent = try FileSafety.openDirectory(original.deletingLastPathComponent().path); defer { close(parent) }
         var parentInfo = stat()
-        guard fstat(parent, &parentInfo) == 0, parentInfo.st_uid == getuid(), parentInfo.st_mode & 0o022 == 0 else { throw AlterError.refused("恢复目录权限已变化。") }
+        guard fstat(parent, &parentInfo) == 0, parentInfo.st_mode & 0o002 == 0 else { throw AlterError.refused("恢复目录权限已变化。") }
         guard renameatx_np(trash, record.trashName, parent, original.lastPathComponent, UInt32(RENAME_EXCL)) == 0 else { throw AlterError.refused("原位置已有同名文件、目录不可用或跨卷；不会覆盖。") }
     }
 }

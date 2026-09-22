@@ -3,14 +3,32 @@ import AppKit
 import AlterCore
 
 enum AppPage: String, CaseIterable, Identifiable {
-    case overview = "总览", clean = "智能清理", storage = "磁盘空间", apps = "应用管理", companion = "Alter 陪伴", history = "操作记录", settings = "设置"
+    case overview = "总览", clean = "智能清理", storage = "空间透镜", apps = "应用管理", purge = "项目产物", installer = "安装包", optimize = "系统维护", status = "系统状态", companion = "Alter 陪伴", history = "操作记录", settings = "设置"
     var id: String { rawValue }
-    var icon: String { switch self { case .overview: "square.grid.2x2"; case .clean: "sparkles"; case .storage: "internaldrive"; case .apps: "square.stack.3d.up"; case .companion: "moon.stars"; case .history: "clock.arrow.circlepath"; case .settings: "slider.horizontal.3" } }
-    var expression: Int { switch self { case .overview: 1; case .clean: 4; case .storage: 15; case .apps: 17; case .companion: 2; case .history: 23; case .settings: 18 } }
+    var icon: String { switch self { case .purge: "shippingbox"; case .installer: "archivebox"; case .optimize: "wrench.and.screwdriver"; case .status: "waveform.path.ecg"; case .overview: "square.grid.2x2"; case .clean: "sparkles"; case .storage: "internaldrive"; case .apps: "square.stack.3d.up"; case .companion: "moon.stars"; case .history: "clock.arrow.circlepath"; case .settings: "slider.horizontal.3" } }
+    var expression: Int { switch self { case .purge: 6; case .installer: 4; case .optimize: 20; case .status: 8; case .overview: 1; case .clean: 4; case .storage: 15; case .apps: 17; case .companion: 2; case .history: 23; case .settings: 18 } }
 }
 @MainActor final class AppModel: ObservableObject {
     @Published var page: AppPage = .overview { didSet { expression = page.expression } }
     @Published var appQuery = ""
+    @Published var candidates: [MoleCandidate] = []
+    @Published var candidateFeature: MoleFeature = .clean
+    @Published var candidateSelection: Set<String> = []
+    @Published var candidateQuery = ""
+    @Published var discoveryNotes = "尚未扫描。"
+    @Published var reviewedPlan: ReviewedPlan?
+    @Published var showReviewed = false
+    @Published var previewOmissions: [String] = []
+    @Published var discoveryRoot: String?
+    @Published var uninstallTarget: String?
+    @Published var optimizeTasks: [OptimizeTask] = []
+    @Published var optimizePreview: OptimizePreview?
+    @Published var showOptimize = false
+    @Published var optimizeOutput = "尚未执行维护任务。"
+    @Published var systemStatus: SystemSnapshot?
+    @Published var statusLive = false
+    @Published var statusDate: Date?
+
     @Published var expressionsPlaying = false
     @Published var expression = 1
     @Published var busy = false
@@ -19,6 +37,26 @@ enum AppPage: String, CaseIterable, Identifiable {
     @Published var installers: [ScanEntry] = []
     @Published var caches: [ScanEntry] = []
     @Published var largeFiles: [ScanEntry] = []
+    @Published var diskSnapshot: DiskSnapshot?
+    @Published var lensBubbles: [LensBubble] = []
+    @Published var lensHover: String?
+    @Published var lensQuery = ""
+    @Published var lensPathInput = "~"
+    @Published var purgePathInput = ""
+    @Published var lensRemainderOnly = false
+    @Published var lensTrail: [String] = []
+    @Published var lensPosition = -1
+    @Published var lensStarted: Date?
+    @Published var lensError: String?
+    @Published var lensPage = 0
+    var lensEntries: [DiskEntry] {
+        let visible = Set(lensBubbles.filter { !$0.remainder }.map(\.id))
+        return (diskSnapshot?.entries ?? []).filter {
+            (!lensRemainderOnly || !visible.contains($0.path)) && (lensQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(lensQuery))
+        }.sorted { $0.size == $1.size ? $0.path < $1.path : $0.size > $1.size }
+    }
+    var pagedLensEntries: [DiskEntry] { Array(lensEntries.dropFirst(lensPage * 100).prefix(100)) }
+
     @Published var applications: [ScanEntry] = []
     @Published var selected: Set<String> = []
     @Published var pendingPlan: RemovalPlan?
@@ -33,10 +71,10 @@ enum AppPage: String, CaseIterable, Identifiable {
     @AppStorage("companionVisible") var companionVisible = true
     @AppStorage("heroExpression") var heroExpression = 1
     private var cancellation = CancellationFlag()
-    private var worker: Task<Void, Never>?
+    var worker: Task<Void, Never>?
     private var pressure: DispatchSourceMemoryPressure?
-    private let home = FileManager.default.homeDirectoryForCurrentUser.path
-    private var history: HistoryStore { HistoryStore(directory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Alter")) }
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    var history: HistoryStore { HistoryStore(directory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Alter")) }
     init() {
         refreshCapacity()
         do { records = try history.load() } catch { errorMessage = error.localizedDescription }
@@ -55,64 +93,73 @@ enum AppPage: String, CaseIterable, Identifiable {
         }
     }
     func cancel() { cancellation.cancel(); activity = "正在停止，请稍候…" }
-    private func begin(_ message: String) -> CancellationFlag? {
+    func begin(_ message: String) -> CancellationFlag? {
         guard !busy, geteuid() != 0 else { if geteuid() == 0 { errorMessage = "Alter 拒绝以 root 身份运行。" }; return nil }
         busy = true; activity = message; cancellation = CancellationFlag(); return cancellation
     }
-    func scanClean() {
-        guard let flag = begin("正在只读扫描下载目录与缓存…") else { return }
-        page = .clean; expression = 7; selected.removeAll(); installers = []; caches = []
-        let home = self.home, policy = MolePolicy(root: Assets.root.appendingPathComponent("Mole"), home: self.home)
-        worker = Task {
-            let result = await Task.detached(priority: .utility) { () -> (ScanReport, ScanReport, String?) in
-                var downloads = BoundedScanner(home: home, limits: ScanLimits(maxEntries: 30_000, maxResults: 128, maxDepth: 1, seconds: 10)).scan(root: home + "/Downloads", mode: .installer, cancellation: flag)
-                var policyError: String?
-                if !downloads.incomplete && !flag.isCancelled {
-                    do {
-                        for offset in stride(from: 0, to: downloads.entries.count, by: 64) {
-                            let end = min(offset + 64, downloads.entries.count)
-                            let allowed = try policy.review(downloads.entries[offset..<end].map(\.path), cancellation: flag)
-                            for (relative, yes) in allowed.enumerated() {
-                                downloads.entries[offset + relative].canTrash = yes
-                                downloads.entries[offset + relative].note = yes ? "已通过 Mole 保护检查 · 仅可移入废纸篓" : "Mole 保护或白名单命中 · 保留"
-                            }
-                        }
-                    } catch { policyError = error.localizedDescription; for i in downloads.entries.indices { downloads.entries[i].canTrash = false } }
-                }
-                let cacheReport = flag.isCancelled ? ScanReport() : BoundedScanner(home: home, limits: ScanLimits(maxEntries: 60_000, maxResults: 64, maxDepth: 12, seconds: 12)).scan(root: home + "/Library/Caches", mode: .cache, cancellation: flag)
-                return (downloads, cacheReport, policyError)
-            }.value
-            installers = result.0.entries; caches = result.1.entries
-            if flag.isCancelled { selected.removeAll(); for i in installers.indices { installers[i].canTrash = false } }
-            let messages = result.0.messages + result.1.messages
-            scanSummary = "检查了 \(result.0.visited + result.1.visited) 项 · " + (messages.isEmpty ? "只读扫描完成" : messages.joined(separator: " "))
-            if let failure = result.2 { errorMessage = failure }
-            activity = flag.isCancelled ? "扫描已取消。" : "扫描结束；未修改任何文件。"
-            expression = flag.isCancelled ? 3 : 10; busy = false; refreshCapacity()
-        }
-    }
+    func scanClean() { discover(.clean) }
     func analyzeFolder() {
         guard !busy else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
-        panel.message = "选择只读分析的文件夹。不会跟随符号链接、读取文件内容或下载云端文件。"
-        guard panel.runModal() == .OK, let url = panel.url else { expression = 3; return }
-        guard let flag = begin("正在分析所选文件夹…") else { return }
-        page = .storage; let home = self.home
+        panel.showsHiddenFiles = true; panel.treatsFilePackagesAsDirectories = true
+        panel.message = "选择要查看空间分布的目录。分析只读；系统与隐藏目录也可浏览，访问权限由 macOS 决定。"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        analyzePath(url.path)
+    }
+    func analyzePath(_ path: String, historyIndex: Int? = nil) {
+        let path = (path as NSString).expandingTildeInPath
+        guard path.hasPrefix("/") else { lensError = "请输入绝对路径或以 ~ 开头的路径。"; return }
+        guard let flag = begin("Mole 正在统计目录大小，可以随时停止…") else { return }
+        page = .storage; lensStarted = Date(); lensError = nil; lensHover = nil
+        let reader = MoleReader(resources: Assets.root)
         worker = Task {
-            let report = await Task.detached(priority: .utility) { BoundedScanner(home: home).scan(root: url.path, mode: .largeFile, cancellation: flag) }.value
-            largeFiles = report.entries
-            storageSummary = "\(url.lastPathComponent) · 已统计 \(byteText(report.bytes)) · \(report.visited) 项。" + report.messages.joined(separator: " ")
-            busy = false; activity = flag.isCancelled ? "分析已停止。" : "分析完成；大文件仅供查看。"; expression = 15
+            do {
+                let result = try await Task.detached(priority: .utility) { try reader.analyze(path, cancellation: flag) }.value
+                guard !flag.isCancelled else { throw AlterError.refused("分析已取消。") }
+                diskSnapshot = result; lensPathInput = result.path; lensBubbles = LensLayout.pack(result.entries)
+                lensRemainderOnly = false; lensQuery = ""; lensPage = 0
+                if let index = historyIndex { lensPosition = index }
+                else if lensTrail.indices.contains(lensPosition), lensTrail[lensPosition] == result.path { }
+                else {
+                    lensTrail = Array(lensTrail.prefix(lensPosition + 1)); lensTrail.append(result.path)
+                    if lensTrail.count > 64 { lensTrail.removeFirst() }
+                    lensPosition = lensTrail.count - 1
+                }
+                storageSummary = "\(byteText(result.totalSize)) · \(result.entries.count) 个直接子项 · Mole 统计 \(result.totalFiles) 个文件"
+                activity = "空间分析完成；结果可能不包含 macOS 隐私权限拒绝访问的内容。"; expression = 15
+            } catch { lensError = error.localizedDescription; activity = "分析未完成，原有结果已保留。" }
+            lensStarted = nil; busy = false
         }
     }
+    func lensNavigate(_ offset: Int) {
+        let target = lensPosition + offset
+        guard lensTrail.indices.contains(target) else { return }
+        analyzePath(lensTrail[target], historyIndex: target)
+    }
+    func lensOpen(_ entry: DiskEntry) {
+        if entry.isDir { analyzePath(entry.path) } else { reveal(entry.path) }
+    }
     func scanApps() {
-        guard let flag = begin("正在只读统计应用…") else { return }
-        page = .apps; let home = self.home
+        guard let flag = begin("Mole 正在统计已安装应用…") else { return }
+        page = .apps
+        let reader = MoleReader(resources: Assets.root), home = self.home
         worker = Task {
-            let report = await Task.detached(priority: .utility) { BoundedScanner(home: home, limits: ScanLimits(maxEntries: 100_000, maxResults: 200, maxDepth: 14, seconds: 20)).scan(root: "/Applications", mode: .application, cancellation: flag) }.value
-            applications = report.entries; busy = false
-            appSummary = "已读取 \(applications.count) 个应用。" + report.messages.joined(separator: " ")
-            activity = "应用统计结束。本版本不执行卸载或关联文件删除。"; expression = 17
+            do {
+                let entries = try await Task.detached(priority: .utility) { () -> [ScanEntry] in
+                    var entries: [ScanEntry] = []
+                    for path in ["/Applications", home + "/Applications"] where FileManager.default.fileExists(atPath: path) {
+                        let snapshot = try reader.analyze(path, cancellation: flag)
+                        for item in snapshot.entries where item.name.lowercased().hasSuffix(".app") {
+                            guard let info = try? FileSafety.metadata(item.path) else { continue }
+                            entries.append(ScanEntry(path: item.path, kind: .application, bytes: item.size, identity: FileSafety.identity(info), note: "查看应用与关联项目"))
+                        }
+                    }
+                    return entries.sorted { $0.bytes > $1.bytes }
+                }.value
+                applications = entries; appSummary = "已统计 \(entries.count) 个应用。选择应用后，由 Mole 检查关联文件。"
+                activity = "应用统计完成。"
+            } catch { errorMessage = error.localizedDescription }
+            busy = false
         }
     }
     func confirmSelected() {

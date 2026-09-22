@@ -123,4 +123,145 @@ final class SafetyTests: XCTestCase {
         XCTAssertNotEqual(process.terminationStatus, 0)
         XCTAssertEqual(try Data(contentsOf: protected).count, 1024)
     }
+    var fullResources: URL {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(".build/test-resources")
+    }
+    func testRealMoleAnalyzerIncludesSmallHiddenAndPackageEntries() throws {
+        try file("Private/.hidden", count: 4096)
+        try FileManager.default.createDirectory(at: home.appendingPathComponent("Private/Example.app"), withIntermediateDirectories: false)
+        try file("Private/Example.app/contents", count: 8192)
+        try file("Private/small.txt", count: 2048)
+        let snapshot = try MoleReader(resources: fullResources).analyze(home.appendingPathComponent("Private").path, cancellation: CancellationFlag())
+        XCTAssertTrue(snapshot.entries.contains { $0.name == ".hidden" })
+        XCTAssertTrue(snapshot.entries.contains { $0.name == "small.txt" })
+        XCTAssertTrue(snapshot.entries.contains { $0.name == "Example.app" && $0.isDir })
+        XCTAssertTrue(snapshot.totalSize > 0)
+        let alias = home.appendingPathComponent("Alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: home.appendingPathComponent("Private"))
+        let aliased = try MoleReader(resources: fullResources).analyze(alias.path, cancellation: CancellationFlag())
+        XCTAssertEqual(aliased.path, snapshot.path)
+    }
+    func testRealMoleInstallerDiscoveryAndFullPolicy() throws {
+        let url = try file("Downloads/current.dmg", count: 4096)
+        let ops = MoleOperations(resources: fullResources, home: home.path)
+        let found = try ops.discover(.installer, path: home.appendingPathComponent("Downloads").path, cancellation: CancellationFlag())
+        XCTAssertTrue(found.candidates.contains { $0.path == url.path })
+        let allowed = try ops.review([url.path, home.path + "/.ssh/id_ed25519"], cancellation: CancellationFlag())
+        XCTAssertEqual(allowed, [true, false])
+        XCTAssertEqual(try Data(contentsOf: url).count, 4096)
+    }
+    func testOptimizeCatalogContainsEveryUpstreamTask() throws {
+        let tasks = try MoleOperations(resources: fullResources, home: home.path).optimizeTasks(cancellation: CancellationFlag())
+        let source = try String(contentsOf: fullResources.appendingPathComponent("MoleFull/lib/optimize/catalog.sh"), encoding: .utf8)
+        let expected = source.components(separatedBy: "\n").filter { $0.hasPrefix("_optimize_catalog_register ") }.count
+        XCTAssertEqual(tasks.count, expected)
+        XCTAssertTrue(tasks.contains { $0.id == "sqlite_vacuum" })
+        XCTAssertTrue(tasks.contains { $0.id == "disk_permissions_repair" })
+        let whitelist = home.appendingPathComponent(".config/mole")
+        try FileManager.default.createDirectory(at: whitelist, withIntermediateDirectories: true)
+        try "prevent_network_dsstore\n".write(to: whitelist.appendingPathComponent("whitelist_optimize"), atomically: true, encoding: .utf8)
+        let task = tasks.first { $0.id == "prevent_network_dsstore" }!
+        let preview = try MoleOperations(resources: fullResources, home: home.path).preview(task, cancellation: CancellationFlag())
+        XCTAssertEqual(preview.outcome, "skipped")
+    }
+    func testRealMolePurgeAndUninstallPreview() throws {
+        let project = home.appendingPathComponent("Project")
+        try FileManager.default.createDirectory(at: project.appendingPathComponent("node_modules/example"), withIntermediateDirectories: true)
+        try "{}".write(to: project.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
+        try "{}".write(to: project.appendingPathComponent("node_modules/example/package.json"), atomically: true, encoding: .utf8)
+        let ops = MoleOperations(resources: fullResources, home: home.path)
+        let artifacts = try ops.discover(.purge, path: project.path, cancellation: CancellationFlag())
+        XCTAssertTrue(artifacts.candidates.contains { $0.path == project.appendingPathComponent("node_modules").path })
+        let app = home.appendingPathComponent("Applications/AlterFixtureUnique.app")
+        try FileManager.default.createDirectory(at: app.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
+        let plist: [String: Any] = ["CFBundleIdentifier": "io.alter.fixture.unique", "CFBundleName": "AlterFixtureUnique", "CFBundleExecutable": "fixture", "CFBundlePackageType": "APPL"]
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: app.appendingPathComponent("Contents/Info.plist"))
+        try Data("fixture-only".utf8).write(to: app.appendingPathComponent("Contents/MacOS/fixture"))
+        let related = home.appendingPathComponent("Library/Caches/io.alter.fixture.unique")
+        try FileManager.default.createDirectory(at: related, withIntermediateDirectories: true)
+        let result = try ops.discover(.uninstall, path: app.path, cancellation: CancellationFlag())
+        XCTAssertTrue(result.candidates.contains { $0.path == app.path })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: app.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: related.path))
+    }
+    func testRealMoleCleanPreviewNeverChangesFixture() throws {
+        let cache = home.appendingPathComponent("Library/Caches/io.alter.cleanfixture")
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        let sentinel = cache.appendingPathComponent("cache.bin")
+        let content = Data(repeating: 17, count: 1024 * 1024)
+        try content.write(to: sentinel)
+        let result = try MoleOperations(resources: fullResources, home: home.path).discover(.clean, cancellation: CancellationFlag())
+        if !result.candidates.contains(where: { $0.path == cache.path || $0.path == sentinel.path }) { throw AlterError.refused(result.notices.joined(separator: "\n")) }
+        XCTAssertEqual(try Data(contentsOf: sentinel), content)
+    }
+    func testFullPolicyProtectsRunningCacheOwner() throws {
+        let cache = home.appendingPathComponent("Library/Caches/io.alter.runningfixture")
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        try Data(repeating: 5, count: 1024).write(to: cache.appendingPathComponent("cache.bin"))
+        let process = Process(); process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", "exec -a io.alter.runningfixture /bin/sleep 30"]
+        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+        try process.run(); defer { if process.isRunning { process.terminate() }; process.waitUntilExit() }
+        let result = try MoleOperations(resources: fullResources, home: home.path).review([cache.path], cancellation: CancellationFlag())
+        XCTAssertEqual(result, [false])
+    }
+    func testRealMoleStatusReturnsMeasuredFields() throws {
+        let data = try MoleReader(resources: fullResources).status(cancellation: CancellationFlag())
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertTrue(json?["cpu"] is [String: Any])
+        XCTAssertTrue(json?["memory"] is [String: Any])
+        XCTAssertLessThanOrEqual(data.count, 8 * 1024 * 1024)
+    }
+    func testReviewedDirectoryMoveRestoreAndChangedChildren() throws {
+        let url = try file("Private/inside.txt")
+        let candidate = MoleCandidate(category: "artifact", path: home.appendingPathComponent("Private").path, bytes: 0, note: "fixture")
+        let flag = CancellationFlag()
+        let before = try ReviewedRemoval.snapshot(candidate, home: home.path, cancellation: flag)
+        try Data(repeating: 1, count: 1200).write(to: url)
+        XCTAssertThrowsError(try ReviewedRemoval.move(before, home: home.path, created: Date(), cancellation: flag))
+        let reviewed = try ReviewedRemoval.snapshot(candidate, home: home.path, cancellation: flag)
+        let record = try ReviewedRemoval.move(reviewed, home: home.path, created: Date(), cancellation: flag)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: candidate.path))
+        try TrashService(home: home.path).restore(record)
+        XCTAssertEqual(try Data(contentsOf: url).count, 1200)
+    }
+    func testReviewedPlanRejectsParentsAndProtectedRoots() throws {
+        let url = try file("Private/inside.txt")
+        let flag = CancellationFlag()
+        let parent = try ReviewedRemoval.snapshot(MoleCandidate(category: "cache", path: home.appendingPathComponent("Private").path, bytes: 0, note: "fixture"), home: home.path, cancellation: flag)
+        let child = try ReviewedRemoval.snapshot(MoleCandidate(category: "cache", path: url.path, bytes: 0, note: "fixture"), home: home.path, cancellation: flag)
+        XCTAssertThrowsError(try ReviewedPlan(items: [parent, child]))
+        XCTAssertThrowsError(try ReviewedRemoval.snapshot(MoleCandidate(category: "cache", path: home.path, bytes: 0, note: "fixture"), home: home.path, cancellation: flag))
+        XCTAssertThrowsError(try ReviewedRemoval.snapshot(MoleCandidate(category: "cache", path: "/System", bytes: 0, note: "fixture"), home: home.path, cancellation: flag))
+    }
+    func testPreviewSandboxRejectsWritesOutsideJob() throws {
+        let sentinel = try file("Private/valuable.txt")
+        let job = home.appendingPathComponent("Job")
+        try FileManager.default.createDirectory(at: job, withIntermediateDirectories: false)
+        XCTAssertThrowsError(try BoundedProcess.run(executable: "/usr/bin/sandbox-exec", arguments: ["-D", "JOB=" + job.path, "-f", fullResources.appendingPathComponent("mole-preview.sb").path, "/bin/bash", "-c", "printf changed > \"$1\"", "test", sentinel.path], environment: ["PATH": "/usr/bin:/bin"], directory: job, cancellation: CancellationFlag(), seconds: 5))
+        XCTAssertEqual(try Data(contentsOf: sentinel).count, 1024)
+    }
+    func testProcessTimeoutAndOutputBudget() throws {
+        let job = home.appendingPathComponent("Budget")
+        try FileManager.default.createDirectory(at: job, withIntermediateDirectories: false)
+        let start = Date()
+        XCTAssertThrowsError(try BoundedProcess.run(executable: "/bin/bash", arguments: ["-c", "sleep 20 & wait"], environment: ["PATH": "/usr/bin:/bin"], directory: job, cancellation: CancellationFlag(), seconds: 0.1))
+        XCTAssertTrue(Date().timeIntervalSince(start) < 3)
+        let output = home.appendingPathComponent("Output")
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: false)
+        XCTAssertThrowsError(try BoundedProcess.run(executable: "/bin/bash", arguments: ["-c", "printf '%4096s' x"], environment: ["PATH": "/usr/bin:/bin"], directory: output, cancellation: CancellationFlag(), seconds: 5, maxOutput: 256))
+    }
+    func testLensCirclesDoNotOverlapAndPreserveArea() throws {
+        let entries = (1...35).map { DiskEntry(name: "item\($0)", path: "/fixture/\($0)", size: Int64(100000 / $0), isDir: true) }
+        let bubbles = LensLayout.pack(entries)
+        XCTAssertTrue(bubbles.count <= 23)
+        XCTAssertEqual(bubbles.reduce(Int64(0)) { $0 + $1.bytes }, entries.reduce(Int64(0)) { $0 + $1.size })
+        for a in bubbles {
+            XCTAssertLessThanOrEqual(hypot(a.x, a.y) + a.radius, 1.000001)
+            for b in bubbles where a.id != b.id { XCTAssertTrue(hypot(a.x - b.x, a.y - b.y) >= a.radius + b.radius - 0.000001) }
+            let ratio = a.radius * a.radius / Double(a.bytes)
+            let reference = bubbles[0].radius * bubbles[0].radius / Double(bubbles[0].bytes)
+            XCTAssertTrue(abs(ratio / reference - 1) < 0.000001)
+        }
+    }
 }

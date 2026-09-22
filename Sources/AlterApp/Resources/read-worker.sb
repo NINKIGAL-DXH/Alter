@@ -1,0 +1,7 @@
+(version 1)
+(allow default)
+(deny network*)
+(deny file-write*)
+(allow file-write* (subpath (param "JOB")))
+(allow file-write-data (literal "/dev/null"))
+(deny process-exec (literal "/usr/bin/sudo") (literal "/usr/bin/osascript") (literal "/bin/launchctl") (literal "/usr/bin/defaults"))

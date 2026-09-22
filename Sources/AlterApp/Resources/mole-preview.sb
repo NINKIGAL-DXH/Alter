@@ -1,0 +1,10 @@
+(version 1)
+(allow default)
+(deny network*)
+(deny file-write*)
+(allow file-write* (subpath (param "JOB")))
+(allow file-write-data (literal "/dev/null"))
+(deny process-exec (literal "/usr/bin/sudo") (literal "/usr/bin/osascript"))
+; Apple's Bash 3.2 ignores TMPDIR for heredocs. Make its global temp-directory
+; probes fail so it uses '.' (the private job cwd), without granting /tmp writes.
+(deny file-read-metadata (literal "/tmp") (literal "/private/tmp") (literal "/var/tmp") (literal "/private/var/tmp") (literal "/usr/tmp"))

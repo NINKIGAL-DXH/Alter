@@ -1,13 +1,15 @@
-# Alter 0.1.0 安装说明
+# Alter 0.2.0 安装说明
 
-从 https://github.com/NINKIGAL-DXH/Alter/releases 下载对应芯片的 DMG 和 SHA-256 文件。Apple Silicon 使用 arm64，Intel 使用 x86_64。最低 macOS 14；原生 Liquid Glass 需要 macOS 26 或更新版本。
+从 [GitHub Releases](https://github.com/NINKIGAL-DXH/Alter/releases) 下载 DMG 与对应 `.sha256`：Apple Silicon 用 `arm64`，Intel 用 `x86_64`。最低 macOS 14；原生 Liquid Glass 需要 macOS 26。
 
-在下载目录使用 `shasum -a 256 -c Alter-0.1.0-arm64.dmg.sha256` 验证（Intel 替换架构名），打开 DMG，将 Alter.app 拖入应用程序。
+在下载目录运行 `shasum -a 256 -c Alter-0.2.0-arm64.dmg.sha256`（Intel 替换架构名）。打开 DMG，将 Alter.app 拖入应用程序。当前是 ad-hoc 签名，未获得 Developer ID 签名和公证；核实来源后按 macOS“隐私与安全性”的正规流程处理阻止提示，不要关闭 Gatekeeper 或移除隔离标记。
 
-当前版本使用 ad-hoc 签名，尚未获得 Apple Developer ID 签名和公证。系统可能阻止打开。请先核对来源和校验和，再由你通过 macOS 提供的“隐私与安全性”流程处理。不要关闭 Gatekeeper 或移除隔离标记作为安装捷径。
+首次启动不扫描或修改文件。空间透镜可选择目录，也可输入 `~/Documents`、`/Volumes` 等路径。系统访问控制仍生效，无法访问的内容不保证计入总量；可由你在隐私设置中管理目录权限。分析系统目录不会赋予删除权限。
 
-首次启动不会扫描或移动文件。只有开始扫描时才可能需要 Downloads 访问许可；不需要管理员密码或完全磁盘访问。读取失败会显示为部分结果。
+智能清理、安装包、应用卸载和项目产物的候选默认不勾选。先选择、再查看完整路径与统计、最后确认移入废纸篓。目录作为整体移动，执行前验证内容未变化。移动不立即释放磁盘空间；记录页支持不覆盖原文件的恢复。崩溃后若记录未落盘，文件仍位于废纸篓的 `Alter-UUID-原名称` 项目中。
 
-文件整理仅限 Downloads 及下一层目录内至少 30 天未变动的安装包；选择默认空白。确认具体项目后才移入废纸篓，不永久删除、不清空废纸篓，也不卸载应用。移入废纸篓不会立即释放磁盘空间。操作记录支持无覆盖恢复；崩溃后若记录未保存，文件仍在废纸篓的 Alter-UUID.ext 项目中。
+系统维护另行确认，不能一键撤销。“确认执行此项”只使用当前用户权限；“在终端授权此项”显示任务详情后由你授权，结果显示在终端。预览 5 分钟有效。跳过、失败和完成分别报告；文件整理不会借用这条维护授权通道。
 
-Mole V1.55.0 路径与应用保护核心按 GPL-3.0 集成，来源声明和对应源码随版本提供。角色图片权利归原权利人，不属于代码 GPL 授权。
+厂商卸载器、Homebrew cask 完整卸载、系统文件删除、废纸篓清空未开放。`disk_verify` 保留上游默认禁用。详细范围见 [FEATURES.md](FEATURES.md)。
+
+Mole 内核已经打包，无需另行安装。来源、许可证、Go 依赖许可证和对应源码随项目提供。角色素材不属于 GPL 代码授权范围。

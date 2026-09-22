@@ -93,10 +93,43 @@ extension View {
 struct PanelSurface: ViewModifier {
     var radius: CGFloat
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    func body(content: Content) -> some View {
-        content.background {
-            if reduceTransparency { RoundedRectangle(cornerRadius: radius).fill(Color(nsColor: .controlBackgroundColor)) }
-            else { RoundedRectangle(cornerRadius: radius).fill(.ultraThinMaterial) }
-        }.overlay { RoundedRectangle(cornerRadius: radius).strokeBorder(.white.opacity(reduceTransparency ? 0 : 0.18), lineWidth: 0.6) }
+    @ViewBuilder func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: radius))
+        } else if #available(macOS 26.0, *) {
+            content.glassEffect(.clear, in: .rect(cornerRadius: radius))
+        } else {
+            content.background(.ultraThinMaterial.opacity(0.45), in: RoundedRectangle(cornerRadius: radius))
+                .overlay { RoundedRectangle(cornerRadius: radius).strokeBorder(.white.opacity(0.24), lineWidth: 0.6) }
+        }
+    }
+}
+
+/// Native behind-window material lets desktop colors reach the clear glass controls.
+/// AppKit automatically respects the system's Reduce Transparency preference.
+struct WindowGlass: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .underWindowBackground; view.blendingMode = .behindWindow; view.state = .active
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        DispatchQueue.main.async {
+            view.window?.isOpaque = false
+            view.window?.backgroundColor = .clear
+        }
+    }
+}
+
+struct AlterBackdrop: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    var body: some View {
+        ZStack {
+            if reduceTransparency { Color(nsColor: .windowBackgroundColor) }
+            else {
+                WindowGlass()
+                LinearGradient(colors: [Color(red: 0.68, green: 0.63, blue: 0.83).opacity(0.13), .clear, Color(red: 0.82, green: 0.61, blue: 0.60).opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+        }.ignoresSafeArea()
     }
 }

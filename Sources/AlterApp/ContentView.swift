@@ -27,24 +27,28 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     switch model.page {
                     case .overview: OverviewView()
-                    case .clean: CleanView()
-                    case .storage: StorageView()
+                    case .clean: MoleCleanView(feature: .clean)
+                    case .purge: MoleCleanView(feature: .purge)
+                    case .installer: MoleCleanView(feature: .installer)
+                    case .optimize: OptimizeView()
+                    case .status: SystemStatusView()
+                    case .storage: SpaceLensView()
                     case .apps: ApplicationsView()
                     case .companion: CompanionView()
                     case .history: HistoryView()
                     case .settings: SettingsView()
                     }
-                    HStack { Label("本地处理 · 无管理员权限", systemImage: "lock.shield"); Spacer(); Text("Mole V1.55.0 · Alter 0.1.0") }.font(.system(size: 10)).foregroundStyle(.secondary).padding(.top, 8)
+                    HStack { Label("本地处理 · 写操作需确认", systemImage: "lock.shield"); Spacer(); Text("Mole V1.55.0 · Alter 0.2.0") }.font(.system(size: 10)).foregroundStyle(.secondary).padding(.top, 8)
                 }.padding(30).frame(maxWidth: 1150).frame(maxWidth: .infinity)
             }
-            .background { LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), wine.opacity(0.11), Color.purple.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing) }
+
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 10) {
                     if model.busy { ProgressView().controlSize(.small) } else { Image(systemName: "checkmark.shield").foregroundStyle(.secondary) }
                     Text(model.activity).font(.system(size: 11)).lineLimit(2)
                     Spacer()
                     if model.busy { Button("停止", action: model.cancel).glassAction() }
-                }.padding(.horizontal, 24).padding(.vertical, 12).background(.bar)
+                }.padding(.horizontal, 24).padding(.vertical, 12).panelSurface(radius: 0)
             }
             .toolbar {
                 ToolbarItem(placement: .navigation) { Text(model.page.rawValue).font(.system(size: 12)).foregroundStyle(.secondary) }
@@ -52,6 +56,9 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .background { AlterBackdrop() }
+        .sheet(isPresented: $model.showReviewed) { ReviewedConfirmation() }
+        .sheet(isPresented: $model.showOptimize) { OptimizeConfirmation() }
         .sheet(isPresented: $model.showConfirmation) { ConfirmationView() }
         .alert("Alter 已保留安全边界", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("知道了") { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
     }
@@ -101,17 +108,17 @@ struct OverviewView: View {
                 Text("当前可用 \(byteText(model.freeCapacity)) · 系统实时容量").font(.system(size: 11)).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading).contentPanel()
             VStack(alignment: .leading, spacing: 13) {
-                Text("待你确认的旧安装包").font(.system(size: 13, weight: .medium))
-                Text(model.installers.isEmpty ? "等待扫描" : byteText(model.reclaimBytes)).font(.system(size: 30, weight: .medium, design: .rounded)).foregroundStyle(wine)
-                Text("至少 30 天未变动 · 不默认勾选").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("逐项预览与确认").font(.system(size: 13, weight: .medium))
+                Text("由你决定").font(.system(size: 30, weight: .medium, design: .rounded)).foregroundStyle(wine)
+                Text("Mole 候选项目 · 不默认勾选").font(.system(size: 11)).foregroundStyle(.secondary)
                 Button("查看整理项目  →") { model.page = .clean }.buttonStyle(.plain).foregroundStyle(wine).font(.system(size: 12))
             }.frame(maxWidth: .infinity, alignment: .leading).contentPanel()
         }
         Text("按你的方式整理").font(.system(size: 14, weight: .semibold))
         HStack(spacing: 14) {
-            QuickTile(title: "检查旧安装包", subtitle: "先预览，再移入废纸篓", icon: "shippingbox") { model.page = .clean }
+            QuickTile(title: "检查清理项目", subtitle: "先预览，再移入废纸篓", icon: "shippingbox") { model.page = .clean }
             QuickTile(title: "找到大文件", subtitle: "只读分析你选择的目录", icon: "folder") { model.page = .storage }
-            QuickTile(title: "查看应用占用", subtitle: "系统与应用内容保持完整", icon: "square.stack.3d.up") { model.page = .apps }
+            QuickTile(title: "查看应用占用", subtitle: "应用与关联项目逐项预览", icon: "square.stack.3d.up") { model.page = .apps }
         }
     }
 }
@@ -169,29 +176,18 @@ struct EmptyState: View {
     let icon: String, title: String, detail: String
     var body: some View { VStack(spacing: 13) { Image(systemName: icon).font(.system(size: 30, weight: .light)).foregroundStyle(wine.opacity(0.6)); Text(title).font(.system(size: 15, weight: .medium)); Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center) }.padding(40).frame(maxWidth: .infinity).panelSurface() }
 }
-struct StorageView: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        PageHeading(title: "每一份空间，都有来处。", subtitle: "从全貌到细节，找到值得整理的地方。")
-        CompanionBanner(number: 15, title: "看看空间去了哪里。", subtitle: "文件大，不代表它不重要。\n我们只看清楚，不擅自处理。", height: 260)
-        HStack { VStack(alignment: .leading, spacing: 7) { Text("大文件 · 100 MB 以上").font(.system(size: 16, weight: .semibold)); Text(model.storageSummary).font(.system(size: 11)).foregroundStyle(.secondary) }; Spacer(); Button(action: model.analyzeFolder) { Label("选择文件夹", systemImage: "folder.badge.plus") }.glassAction(prominent: true).disabled(model.busy) }
-        if model.largeFiles.isEmpty { EmptyState(icon: "folder", title: "从一个文件夹开始", detail: "扫描最多 20 秒 / 100,000 项，最多保留 300 个大文件结果。") }
-        else {
-            LazyVStack(spacing: 0) { ForEach(model.largeFiles) { entry in HStack { FileRow(entry: entry); Button { model.reveal(entry.path) } label: { Image(systemName: "arrow.up.forward.square") }.buttonStyle(.plain).help("在 Finder 中查看") }.padding(.vertical, 14); Divider() } }.contentPanel()
-        }
-    }
-}
 struct ApplicationsView: View {
     @EnvironmentObject var model: AppModel
 
     var entries: [ScanEntry] { model.applications.filter { model.appQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(model.appQuery) } }
     var body: some View {
-        PageHeading(title: "留下真正需要的。", subtitle: "先了解应用的占用。系统应用、关联文件与运行状态保持完整。")
-        CompanionBanner(number: 17, title: "每个工具，都有它的位置。", subtitle: "这一版只统计应用占用。\n卸载与关联文件删除暂不开放。", height: 230)
+        PageHeading(title: "留下真正需要的。", subtitle: "Mole 应用识别与关联文件发现 · 卸载前逐项预览")
+        CompanionBanner(number: 17, title: "每个工具，都有它的位置。", subtitle: "应用与关联数据，分开看清。\n需要厂商卸载器的应用会说明原因。", height: 230)
         HStack { TextField("搜索应用", text: $model.appQuery).textFieldStyle(.roundedBorder).frame(maxWidth: 260); Spacer(); Button(action: model.scanApps) { Label("读取应用", systemImage: "arrow.clockwise") }.glassAction().disabled(model.busy) }
         Text(model.appSummary).font(.system(size: 11)).foregroundStyle(.secondary)
-        if entries.isEmpty { EmptyState(icon: "square.stack.3d.up", title: model.appQuery.isEmpty ? "尚无应用统计" : "没有匹配的应用", detail: "只读取 /Applications，不执行应用、卸载器或提权命令。") }
-        else { LazyVStack(spacing: 0) { ForEach(entries) { entry in HStack { FileRow(entry: entry); Button("查看") { model.reveal(entry.path); model.expression = 19 }.buttonStyle(.plain).foregroundStyle(wine).font(.system(size: 11)) }.padding(.vertical, 14); Divider() } }.contentPanel() }
+        if entries.isEmpty { EmptyState(icon: "square.stack.3d.up", title: model.appQuery.isEmpty ? "尚无应用统计" : "没有匹配的应用", detail: "读取 /Applications 与用户 Applications，选择应用后检查关联项目。") }
+        else { LazyVStack(spacing: 0) { ForEach(entries) { entry in HStack { FileRow(entry: entry); Button("卸载预览") { model.discover(.uninstall, path: entry.path); model.expression = 19 }.buttonStyle(.plain).foregroundStyle(wine).font(.system(size: 11)) }.padding(.vertical, 14); Divider() } }.contentPanel() }
+        if model.candidateFeature == .uninstall, model.uninstallTarget != nil { CandidateList() }
     }
 }
 struct CompanionView: View {
@@ -233,7 +229,7 @@ struct CompanionView: View {
 struct HistoryView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
-        PageHeading(title: "每一次整理，都有迹可循。", subtitle: "只记录真实操作。可在这里将安装包恢复到原位置。")
+        PageHeading(title: "每一次整理，都有迹可循。", subtitle: "只记录真实移动。可将文件与目录恢复到原位置。")
         if model.records.isEmpty { CompanionBanner(number: 23, title: "还没有需要回头看的事。", subtitle: "移入废纸篓后，操作记录会留在这里。\n不会覆盖已有的同名文件。", height: 255) }
         else {
             LazyVStack(spacing: 0) {
@@ -265,7 +261,7 @@ struct SettingsView: View {
         }.font(.system(size: 13)).contentPanel()
         VStack(alignment: .leading, spacing: 16) {
             Text("安全与资源边界").font(.system(size: 16, weight: .semibold))
-            Label("不提权、不永久删除、不改系统设置", systemImage: "lock.shield")
+            Label("清理移入废纸篓；维护逐项确认；管理员授权在终端完成", systemImage: "lock.shield")
             Label("单个扫描任务；可取消；数量和时间均有上限", systemImage: "gauge.with.dots.needle.33percent")
             Label("图片缩略解码；缓存预算 20 MB；内存压力触发停止", systemImage: "memorychip")
             Label("遇到路径变化、权限不足或未知结果，一律跳过", systemImage: "hand.raised")
@@ -274,9 +270,9 @@ struct SettingsView: View {
         HStack(alignment: .top, spacing: 19) {
             BrandImage(size: 68)
             VStack(alignment: .leading, spacing: 9) {
-                Text("Alter 0.1.0").font(.system(size: 21, weight: .medium, design: .serif))
-                Text("Mole V1.55.0 保护内核 · 原生 SwiftUI 界面").font(.system(size: 12))
-                Text("使用 tw93/Mole 的路径与应用保护模块，GPL-3.0。Alter 是独立衍生项目，非 Mole 官方应用，无官方背书。扫描与可恢复移动由 Alter 的有界适配层负责。").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
+                Text("Alter 0.2.0").font(.system(size: 21, weight: .medium, design: .serif))
+                Text("Mole V1.55.0 内核 · 原生 SwiftUI 界面").font(.system(size: 12))
+                Text("使用 tw93/Mole 的清理、卸载发现、维护、分析、状态、项目产物与安装包模块，GPL-3.0。Alter 为独立衍生项目，无官方背书；写操作经过预览适配，具体限制见 README。").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
                 HStack(spacing: 18) { Link("Mole 源项目", destination: URL(string: "https://github.com/tw93/Mole/tree/69ab325d4f05af0ea21aeeeae544046c9f04a76b")!); Link("Apple 材质指南", destination: URL(string: "https://developer.apple.com/design/human-interface-guidelines/materials")!); Button("许可证") { model.reveal(Assets.root.appendingPathComponent("Mole/LICENSE").path) }.buttonStyle(.plain) }.font(.system(size: 11)).foregroundStyle(wine)
                 Text("角色图片由用户提供；角色与原作权利归原权利人，不属于 GPL 代码授权。").font(.system(size: 10)).foregroundStyle(.secondary)
             }

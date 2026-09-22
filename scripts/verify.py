@@ -8,6 +8,11 @@ manifest = json.loads((mole / 'UPSTREAM.json').read_text())
 assert manifest['commit'] == '69ab325d4f05af0ea21aeeeae544046c9f04a76b'
 for name, expected in manifest['sha256'].items():
     assert hashlib.sha256((mole / name).read_bytes()).hexdigest() == expected, name
+full = root / 'Vendor/Mole'
+full_manifest = json.loads((full / 'UPSTREAM.json').read_text())
+assert full_manifest['commit'] == manifest['commit']
+for name, expected in full_manifest['sha256'].items():
+    assert hashlib.sha256((full / name).read_bytes()).hexdigest() == expected, name
 expressions = root / 'Sources/AlterApp/Resources/Expressions'
 records = json.loads((expressions / 'expressions.json').read_text())
 assert [e['id'] for e in records] == list(range(1, 24))
@@ -19,7 +24,7 @@ for e in records:
     assert 0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1
     assert x + w <= 1.000001 and y + h <= 1.000001
 assert (root / 'Sources/AlterApp/Resources/Brand/Alter.png').read_bytes().startswith(b'\x89PNG')
-# Ensure no full Mole mutation entrypoints accidentally enter the distributable.
+# The legacy pure predicate adapter stays separate from the full pinned source.
 assert not (mole / 'bin').exists()
 assert not (mole / 'mole').exists()
 assert not (mole / 'lib/core/file_ops.sh').exists()
@@ -29,4 +34,6 @@ for forbidden in ['AuthorizationExecuteWithPrivileges', 'SMJobBless', 'NSAppleSc
 policy = (mole / 'alter-policy.sh').read_text()
 assert 'should_protect_path' in policy and 'is_path_whitelisted' in policy
 assert 'MOLE_DRY_RUN=1' in policy
-print('PASS: pinned Mole hashes, 23 unique expressions, supplied icon, and restricted runtime surface.')
+adapter = (root / 'Sources/AlterApp/Resources/mole-adapter.sh').read_text()
+assert 'MOLE_DRY_RUN=1' in adapter and '_batch_execute_removals' not in adapter
+print('PASS: full pinned Mole source, pure policy core, 23 expressions, and preview-only discovery adapter.')
