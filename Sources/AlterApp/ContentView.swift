@@ -26,6 +26,10 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     switch model.page {
+                    case .files: FileManagementView()
+                    case .startup: StartupView()
+                    case .security: SecurityView()
+                    case .protection: ProtectionView()
                     case .overview: OverviewView()
                     case .clean: MoleCleanView(feature: .clean)
                     case .purge: MoleCleanView(feature: .purge)
@@ -38,7 +42,7 @@ struct ContentView: View {
                     case .history: HistoryView()
                     case .settings: SettingsView()
                     }
-                    HStack { Label("本地处理 · 写操作需确认", systemImage: "lock.shield"); Spacer(); Text("Mole V1.55.0 · Alter 0.2.0") }.font(.system(size: 10)).foregroundStyle(.secondary).padding(.top, 8)
+                    HStack { Label("本地处理 · 写操作需确认", systemImage: "lock.shield"); Spacer(); Text("Mole V1.55.0 · Alter " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "开发版")) }.font(.system(size: 10)).foregroundStyle(.secondary).padding(.top, 8)
                 }.padding(30).frame(maxWidth: 1150).frame(maxWidth: .infinity)
             }
 
@@ -182,12 +186,19 @@ struct ApplicationsView: View {
     var entries: [ScanEntry] { model.applications.filter { model.appQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(model.appQuery) } }
     var body: some View {
         PageHeading(title: "留下真正需要的。", subtitle: "Mole 应用识别与关联文件发现 · 卸载前逐项预览")
+        Picker("应用功能", selection: $model.appTab) { Text("已安装").tag(0); Text("应用更新").tag(1); Text("疑似残留").tag(2) }.pickerStyle(.segmented)
+        if model.appTab == 1 { AppUpdatesView() }
+        else if model.appTab == 2 {
+            Button("查找疑似残留", action: model.scanLeftovers).glassAction(prominent: true).disabled(model.busy)
+            CandidateList()
+        } else {
         CompanionBanner(number: 17, title: "每个工具，都有它的位置。", subtitle: "应用与关联数据，分开看清。\n需要厂商卸载器的应用会说明原因。", height: 230)
         HStack { TextField("搜索应用", text: $model.appQuery).textFieldStyle(.roundedBorder).frame(maxWidth: 260); Spacer(); Button(action: model.scanApps) { Label("读取应用", systemImage: "arrow.clockwise") }.glassAction().disabled(model.busy) }
         Text(model.appSummary).font(.system(size: 11)).foregroundStyle(.secondary)
         if entries.isEmpty { EmptyState(icon: "square.stack.3d.up", title: model.appQuery.isEmpty ? "尚无应用统计" : "没有匹配的应用", detail: "读取 /Applications 与用户 Applications，选择应用后检查关联项目。") }
-        else { LazyVStack(spacing: 0) { ForEach(entries) { entry in HStack { FileRow(entry: entry); Button("卸载预览") { model.discover(.uninstall, path: entry.path); model.expression = 19 }.buttonStyle(.plain).foregroundStyle(wine).font(.system(size: 11)) }.padding(.vertical, 14); Divider() } }.contentPanel() }
+        else { LazyVStack(spacing: 0) { ForEach(entries) { entry in HStack { FileRow(entry: entry); Button("签名") { model.auditSignature(entry.path); model.page = .security }.buttonStyle(.plain).font(.system(size: 11)); Button("卸载预览") { model.discover(.uninstall, path: entry.path); model.expression = 19 }.buttonStyle(.plain).foregroundStyle(wine).font(.system(size: 11)) }.padding(.vertical, 14); Divider() } }.contentPanel() }
         if model.candidateFeature == .uninstall, model.uninstallTarget != nil { CandidateList() }
+        }
     }
 }
 struct CompanionView: View {
@@ -270,7 +281,7 @@ struct SettingsView: View {
         HStack(alignment: .top, spacing: 19) {
             BrandImage(size: 68)
             VStack(alignment: .leading, spacing: 9) {
-                Text("Alter 0.2.0").font(.system(size: 21, weight: .medium, design: .serif))
+                Text("Alter " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "开发版")).font(.system(size: 21, weight: .medium, design: .serif))
                 Text("Mole V1.55.0 内核 · 原生 SwiftUI 界面").font(.system(size: 12))
                 Text("使用 tw93/Mole 的清理、卸载发现、维护、分析、状态、项目产物与安装包模块，GPL-3.0。Alter 为独立衍生项目，无官方背书；写操作经过预览适配，具体限制见 README。").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
                 HStack(spacing: 18) { Link("Mole 源项目", destination: URL(string: "https://github.com/tw93/Mole/tree/69ab325d4f05af0ea21aeeeae544046c9f04a76b")!); Link("Apple 材质指南", destination: URL(string: "https://developer.apple.com/design/human-interface-guidelines/materials")!); Button("许可证") { model.reveal(Assets.root.appendingPathComponent("Mole/LICENSE").path) }.buttonStyle(.plain) }.font(.system(size: 11)).foregroundStyle(wine)

@@ -1,7 +1,7 @@
 import SwiftUI
 import AlterCore
 
-private let lensColors: [Color] = [Color(red: 0.57, green: 0.43, blue: 0.68), Color(red: 0.69, green: 0.41, blue: 0.51), Color(red: 0.41, green: 0.57, blue: 0.64), Color(red: 0.65, green: 0.56, blue: 0.43), Color(red: 0.43, green: 0.60, blue: 0.56)]
+private let lensColors: [Color] = [Color(red: 0.60, green: 0.24, blue: 0.94), Color(red: 0.94, green: 0.20, blue: 0.44), Color(red: 0.08, green: 0.63, blue: 0.95), Color(red: 0.96, green: 0.62, blue: 0.12), Color(red: 0.06, green: 0.77, blue: 0.61)]
 
 struct SpaceLensView: View {
     @EnvironmentObject var model: AppModel
@@ -38,6 +38,9 @@ struct SpaceLensView: View {
         }
         VStack(alignment: .leading, spacing: 18) {
             navigation
+            if let date = model.indexDate {
+                HStack { Label(model.indexStale ? "文件已变化，点击刷新更新索引" : "已建立索引 · 下钻无需重新扫描", systemImage: model.indexStale ? "arrow.clockwise" : "bolt.fill"); Spacer(); Text(date, style: .time) }.font(.system(size: 11)).foregroundStyle(model.indexStale ? .orange : .secondary)
+            }
             HStack(alignment: .top, spacing: 22) {
                 lens.frame(minWidth: 260, maxWidth: .infinity).frame(height: 440)
                 fileList.frame(width: 250, height: 440)
@@ -61,7 +64,7 @@ struct SpaceLensView: View {
                 } label: { Label(path, systemImage: "folder").lineLimit(1).truncationMode(.middle).font(.system(size: 11)) }
                 .menuStyle(.borderlessButton).disabled(model.busy).help(path)
                 Spacer(minLength: 4)
-                Button { model.analyzePath(path) } label: { Image(systemName: "arrow.clockwise") }.glassAction().disabled(model.busy).help("重新分析当前目录")
+                Button { model.analyzePath(path, refresh: true) } label: { Image(systemName: "arrow.clockwise") }.glassAction().disabled(model.busy).help("刷新整份目录索引")
             } else {
                 Text("选择目录，开始探索").font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer()
@@ -111,7 +114,7 @@ struct SpaceLensView: View {
             else if let entry = model.diskSnapshot?.entries.first(where: { $0.path == bubble.id }) { model.lensOpen(entry) }
         } label: {
             ZStack {
-                Circle().fill(LinearGradient(colors: [color.opacity(0.44), color.opacity(0.15), color.opacity(0.34)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                Circle().fill(LinearGradient(colors: [color.opacity(0.62), color.opacity(0.18), color.opacity(0.47)], startPoint: .topLeading, endPoint: .bottomTrailing))
                 Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.85), color.opacity(0.30), .white.opacity(0.40)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: highlighted ? 2.2 : 0.8)
                 if diameter > 65 {
                     VStack(spacing: diameter > 130 ? 8 : 4) {
@@ -148,14 +151,14 @@ struct SpaceLensView: View {
                                     Image(systemName: entry.isDir ? "chevron.right" : "arrow.up.forward.square").font(.system(size: 9)).foregroundStyle(.secondary)
                                 }.padding(11).background(model.lensHover == entry.path ? lensColors[0].opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 12))
                             }.buttonStyle(.plain).disabled(model.busy).onHover { model.lensHover = $0 ? entry.path : nil }.help(entry.path)
-                                .contextMenu { Button("在 Finder 中显示") { model.reveal(entry.path) }; Button("预览移入废纸篓") { model.previewLensItem(entry) }.disabled(model.busy) }
+                                .contextMenu { Button("加入保护名单") { model.addProtection(entry.path) }; Button("在 Finder 中显示") { model.reveal(entry.path) }; Button("预览移入废纸篓") { model.previewLensItem(entry) }.disabled(model.busy) }
                         }
                     }
                 }
-                if model.lensEntries.count > 100 {
-                    HStack { Button("上一页") { model.lensPage -= 1 }.disabled(model.lensPage == 0); Spacer(); Text("\(model.lensPage + 1) / \((model.lensEntries.count + 99) / 100)"); Spacer(); Button("下一页") { model.lensPage += 1 }.disabled((model.lensPage + 1) * 100 >= model.lensEntries.count) }.font(.system(size: 10))
+                if model.lensTotalEntries > 100 {
+                    HStack { Button("上一页") { model.lensPage -= 1 }.disabled(model.lensPage == 0); Spacer(); Text("\(model.lensPage + 1) / \((model.lensTotalEntries + 99) / 100)"); Spacer(); Button("下一页") { model.lensPage += 1 }.disabled((model.lensPage + 1) * 100 >= model.lensTotalEntries) }.font(.system(size: 10))
                 }
-                Text("\(model.lensEntries.count) 项 · 按占用排序").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("\(model.lensTotalEntries) 项 · 按占用排序").font(.system(size: 10)).foregroundStyle(.secondary)
             }
         }
     }

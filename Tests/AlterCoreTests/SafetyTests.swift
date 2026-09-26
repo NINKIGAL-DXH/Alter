@@ -276,4 +276,107 @@ final class SafetyTests: XCTestCase {
             XCTAssertTrue(abs(ratio / reference - 1) < 0.000001)
         }
     }
+    func testIndexedNavigationAndExplicitRefresh() throws {
+        let nested = home.appendingPathComponent("Private/Inner/Deep")
+        try FileManager.default.createDirectory(at:nested,withIntermediateDirectories:true)
+        let first = nested.appendingPathComponent(".hidden.txt")
+        try Data(repeating:1,count:8192).write(to:first)
+        let reader = MoleReader(resources:fullResources)
+        let index = try reader.index(home.appendingPathComponent("Private").path,cancellation:CancellationFlag())
+        XCTAssertEqual(try index.snapshot(nested.path).entries.count,1)
+        let second = nested.appendingPathComponent("Later.txt")
+        try Data(repeating:2,count:1024).write(to:second)
+        // Reading the already scanned descendant MUST NOT touch the filesystem.
+        XCTAssertEqual(try index.snapshot(nested.path).entries.count,1)
+        XCTAssertEqual(try index.snapshot(index.root).totalFiles,1)
+        let updated = try reader.index(index.root,cancellation:CancellationFlag())
+        XCTAssertEqual(try updated.snapshot(nested.path).entries.count,2)
+        XCTAssertEqual(try index.snapshot(nested.path).entries.count,1)
+        XCTAssertTrue(try index.snapshot(nested.path).entries[0].name.hasPrefix("."))
+    }
+    func testIndexDoesNotFollowDirectorySymlinks() throws {
+        let secret = try file("Private/secret.txt")
+        let alias = home.appendingPathComponent("Downloads/Link")
+        try FileManager.default.createSymbolicLink(at:alias,withDestinationURL:home.appendingPathComponent("Private"))
+        let index = try MoleReader(resources:fullResources).index(home.appendingPathComponent("Downloads").path,cancellation:CancellationFlag())
+        XCTAssertFalse(try index.hasDirectory(alias.path))
+        XCTAssertTrue(try index.files().isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath:secret.path))
+    }
+    func testDuplicateHashingDistinguishesEqualSizes() throws {
+        try file("Downloads/First.bin",count:8192)
+        try file("Downloads/Second.bin",count:8192)
+        let third = try file("Downloads/Third.bin",count:8192)
+        try Data(repeating:7,count:8192).write(to:third)
+        let index = try MoleReader(resources:fullResources).index(home.appendingPathComponent("Downloads").path,cancellation:CancellationFlag())
+        let report = try DuplicateFinder.find(in:index,cancellation:CancellationFlag())
+        XCTAssertEqual(report.groups.count,1)
+        guard let group = report.groups.first else { XCTFail("No duplicate group; checked \(report.checked), skipped \(report.skipped): \(report.notes)"); return }
+        XCTAssertEqual(group.files.count,2)
+        XCTAssertFalse(group.files.contains { $0.path == third.path })
+        let cancelled = CancellationFlag(); cancelled.cancel()
+        XCTAssertThrowsError(try DuplicateFinder.find(in:index,cancellation:cancelled))
+    }
+    func testProtectionIncludesDescendantsAndParentsAndFailsClosed() throws {
+        let store = ProtectionStore(home:home.path)
+        let file = try file("Downloads/Important.txt")
+        try store.save([file.path])
+        XCTAssertThrowsError(try store.requireUnprotected(file.path))
+        XCTAssertThrowsError(try store.requireUnprotected(home.appendingPathComponent("Downloads").path))
+        XCTAssertThrowsError(try ReviewedRemoval.snapshot(MoleCandidate(category:"file",path:file.path,bytes:1024,note:"fixture"),home:home.path,cancellation:CancellationFlag()))
+        try store.requireUnprotected(home.appendingPathComponent("Private").path)
+        try store.save([])
+        try store.requireUnprotected(file.path)
+        try Data("broken".utf8).write(to:home.appendingPathComponent("Library/Application Support/Alter/protected.json"))
+        XCTAssertThrowsError(try store.requireUnprotected(file.path))
+    }
+
+    func testDuplicateRetainedCopyMustStillMatch() throws {
+        let a = try file("Downloads/a.bin",count:8192)
+        let b = try file("Downloads/b.bin",count:8192)
+        let index = try MoleReader(resources:fullResources).index(home.appendingPathComponent("Downloads").path,cancellation:CancellationFlag())
+        let groups = try DuplicateFinder.find(in:index,cancellation:CancellationFlag()).groups
+        XCTAssertEqual(groups.count,1)
+        try DuplicateFinder.revalidate(groups,selected:[a.path],cancellation:CancellationFlag())
+        XCTAssertThrowsError(try DuplicateFinder.revalidate(groups,selected:[a.path,b.path],cancellation:CancellationFlag()))
+        try Data(repeating:3,count:8192).write(to:b)
+        XCTAssertThrowsError(try DuplicateFinder.revalidate(groups,selected:[a.path],cancellation:CancellationFlag()))
+        XCTAssertTrue(FileManager.default.fileExists(atPath:a.path))
+    }
+    func testCaskPreviewRejectsScriptsDependenciesAndChangedVersion() throws {
+        let update = BrewUpdate(token:"example",installed:"1.0",available:"2.0")
+        func payload(_ extra: [String:Any] = [:]) throws -> Data {
+            var cask: [String:Any] = ["token":"example","tap":"homebrew/cask","version":"2.0","installed":"1.0","artifacts":[["app":["Example.app"]]]]
+            cask.merge(extra) { _, new in new }
+            return try JSONSerialization.data(withJSONObject:["casks":[cask]])
+        }
+        XCTAssertEqual(try BrewUpdates.parsePreview(update,data:payload()).appPaths,["/Applications/Example.app"])
+        XCTAssertThrowsError(try BrewUpdates.parsePreview(update,data:payload(["artifacts":[["installer":["script":"install.sh"]]]])))
+        XCTAssertThrowsError(try BrewUpdates.parsePreview(update,data:payload(["depends_on":["formula":["other"]]])))
+        XCTAssertThrowsError(try BrewUpdates.parsePreview(update,data:payload(["version":"3.0"])))
+        XCTAssertThrowsError(try BrewUpdates.parsePreview(update,data:payload(["tap":"untrusted/tap"])))
+        XCTAssertThrowsError(try BrewUpdates.parsePreview(update,data:payload(["artifacts":[["app":["../../Elsewhere.app"]]]])))
+    }
+    func testStartupPlanCannotTargetSystemDomain() throws {
+        let url = try file("Private/agent.plist")
+        let item = StartupItem(path:url.path,label:"com.example.agent",program:"/bin/true",userAgent:false,disabled:false,identity:FileSafety.identity(try FileSafety.metadata(url.path)))
+        XCTAssertThrowsError(try StartupManager.apply(StartupPlan(item:item,disable:true),home:home.path,cancellation:CancellationFlag()))
+        XCTAssertTrue(FileManager.default.fileExists(atPath:url.path))
+    }
+
+    func testIndexPaginatesBeyondCircleSnapshot() throws {
+        let root = home.appendingPathComponent("Private")
+        for n in 0..<310 { try file("Private/item-\(n).bin",count:8) }
+        let index = try MoleReader(resources:fullResources).index(root.path,cancellation:CancellationFlag())
+        let snapshot = try index.snapshot(root.path)
+        XCTAssertEqual(snapshot.childCount,310)
+        XCTAssertEqual(snapshot.entries.count,256)
+        let first = try index.children(root.path), last = try index.children(root.path,page:3)
+        XCTAssertEqual(first.count,310); XCTAssertEqual(first.entries.count,100); XCTAssertEqual(last.entries.count,10)
+        XCTAssertTrue(Set(first.entries.map(\.path)).isDisjoint(with:Set(last.entries.map(\.path))))
+        let found = try index.children(root.path,query:"item-309.bin")
+        XCTAssertEqual(found.count,1)
+        XCTAssertEqual(LensLayout.pack(snapshot.entries,totalSize:snapshot.totalSize).reduce(Int64(0)) { $0 + $1.bytes },snapshot.totalSize)
+    }
+
 }

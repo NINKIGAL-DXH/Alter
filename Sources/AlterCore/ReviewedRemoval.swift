@@ -33,6 +33,7 @@ public enum ReviewedRemoval {
         return path.hasPrefix(home + "/") || (path.hasPrefix("/Applications/") && URL(fileURLWithPath: path).deletingLastPathComponent().path == "/Applications" && path.lowercased().hasSuffix(".app")) || path.hasPrefix("/Volumes/")
     }
     public static func snapshot(_ candidate: MoleCandidate, home: String, cancellation: CancellationFlag) throws -> ReviewedItem {
+        try ProtectionStore(home: home).requireUnprotected(candidate.path)
         guard allowedScope(candidate.path, home: home) else { throw AlterError.refused("此位置保持只读：" + candidate.path) }
         let url = URL(fileURLWithPath: candidate.path)
         let parent = try FileSafety.openDirectory(url.deletingLastPathComponent().path); defer { close(parent) }

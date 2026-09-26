@@ -2,6 +2,12 @@ import Foundation
 import Darwin
 
 public enum FileSafety {
+    /// POSIX physical path for read-only scanning. Foundation may rewrite /private/tmp
+    /// back to the /tmp alias, which is intentionally refused by write validation.
+    public static func physicalReadPath(_ path: String) throws -> String {
+        guard validPath(path), let resolved = realpath(path, nil) else { throw AlterError.refused("目录或文件不存在，或无法解析其真实路径。") }
+        defer { free(resolved) }; return String(cString: resolved)
+    }
     public static func metadata(_ path: String) throws -> stat {
         var info = stat()
         guard lstat(path, &info) == 0 else { throw AlterError.refused("文件已变化或不可访问。") }

@@ -15,13 +15,18 @@ public struct DiskSnapshot: Decodable, Sendable {
     public let path: String
     public let entries: [DiskEntry]
     public let totalSize: Int64, totalFiles: Int64
-    enum CodingKeys: String, CodingKey { case path, entries; case totalSize = "total_size", totalFiles = "total_files" }
+    public let childCount: Int
+    enum CodingKeys: String, CodingKey { case path, entries; case totalSize = "total_size", totalFiles = "total_files", childCount = "child_count" }
+    public init(path: String, entries: [DiskEntry], totalSize: Int64, totalFiles: Int64, childCount: Int? = nil) {
+        self.path = path; self.entries = entries; self.totalSize = totalSize; self.totalFiles = totalFiles; self.childCount = childCount ?? entries.count
+    }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         path = try c.decode(String.self, forKey: .path)
         entries = try c.decodeIfPresent([DiskEntry].self, forKey: .entries) ?? []
         totalSize = try c.decode(Int64.self, forKey: .totalSize)
         totalFiles = try c.decodeIfPresent(Int64.self, forKey: .totalFiles) ?? 0
+        childCount = try c.decodeIfPresent(Int.self, forKey:.childCount) ?? entries.count
         guard totalSize >= 0, totalFiles >= 0, entries.count <= 50_000,
               entries.allSatisfy({ $0.size >= 0 && $0.path.hasPrefix("/") }),
               Set(entries.map(\.path)).count == entries.count else {
@@ -38,7 +43,7 @@ public struct MoleReader: Sendable {
     public func analyze(_ path: String, cancellation: CancellationFlag) throws -> DiskSnapshot {
         // Resolve aliases only for read-only browsing. This never weakens write validation.
         guard FileSafety.validPath(path) else { throw AlterError.refused("请输入有效的绝对目录路径。") }
-        let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        let canonical = try FileSafety.physicalReadPath(path)
         var directory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: canonical, isDirectory: &directory), directory.boolValue else {
             throw AlterError.refused("目录不存在或无法访问。请重新选择目录。")
@@ -48,10 +53,19 @@ public struct MoleReader: Sendable {
         guard snapshot.path == canonical else { throw AlterError.refused("Mole 返回的目录与选择不一致。") }
         return snapshot
     }
+    public func index(_ path: String, cancellation: CancellationFlag) throws -> DiskIndex {
+        guard FileSafety.validPath(path) else { throw AlterError.refused("请输入有效目录路径。") }
+        let canonical = try FileSafety.physicalReadPath(path)
+        var result: DiskIndex?
+        _ = try run(command: "analyze", arguments: ["--json", canonical], cancellation: cancellation, indexed: true) { job in
+            result = try DiskIndex(root: canonical, stream: job.appendingPathComponent("index.ndjson"), cancellation: cancellation)
+        }
+        guard let result else { throw AlterError.refused("未生成空间索引。") }; return result
+    }
     public func status(cancellation: CancellationFlag) throws -> Data {
         try run(command: "status", arguments: ["--json"], cancellation: cancellation, seconds: 60)
     }
-    private func run(command: String, arguments: [String], cancellation: CancellationFlag, seconds: Double = 900) throws -> Data {
+    private func run(command: String, arguments: [String], cancellation: CancellationFlag, seconds: Double = 900, indexed: Bool = false, consume: ((URL) throws -> Void)? = nil) throws -> Data {
         guard geteuid() != 0, ["analyze", "status"].contains(command) else { throw AlterError.refused("读取内核不允许提权运行。") }
         let executable = resources.appendingPathComponent("Kernel/" + command)
         guard FileManager.default.isExecutableFile(atPath: executable.path) else { throw AlterError.refused("未找到 Mole 分析内核，请使用完整构建的 Alter.app。") }
@@ -62,6 +76,7 @@ public struct MoleReader: Sendable {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var env = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": home, "TMPDIR": job.path,
                    "ALTER_MOLE_CACHE_DIR": job.appendingPathComponent("cache").path, "GOMAXPROCS": "2", "GOMEMLIMIT": "256MiB", "NO_COLOR": "1", "LC_ALL": "C"]
+        if indexed { env["ALTER_MOLE_INDEX"] = "1" }
         if command == "status" {
             let snapshots = job.appendingPathComponent("processes")
             try FileManager.default.createDirectory(at: snapshots, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -74,8 +89,10 @@ public struct MoleReader: Sendable {
             }
             env["ALTER_MOLE_PROCESS_DIR"] = snapshots.path
         }
-        return try BoundedProcess.run(executable: "/usr/bin/sandbox-exec", arguments: ["-D", "JOB=" + job.path, "-f", resources.appendingPathComponent("read-worker.sb").path, "/bin/bash", "--noprofile", "--norc", resources.appendingPathComponent("read-worker.sh").path, executable.path] + arguments,
+        let result = try BoundedProcess.run(executable: "/usr/bin/sandbox-exec", arguments: ["-D", "JOB=" + job.path, "-f", resources.appendingPathComponent("read-worker.sb").path, "/bin/bash", "--noprofile", "--norc", resources.appendingPathComponent("read-worker.sh").path, executable.path] + arguments,
                                       environment: env, directory: job, cancellation: cancellation, seconds: seconds)
+        try consume?(job)
+        return result
     }
     static func clearJob(_ job: URL) {
         // Walk only our freshly created directory without following symlinks.

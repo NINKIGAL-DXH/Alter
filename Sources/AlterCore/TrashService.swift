@@ -30,6 +30,7 @@ public struct TrashService: Sendable {
         return fd
     }
     public func move(_ entry: ScanEntry, planCreated: Date, now: Date = Date()) throws -> TrashRecord {
+        try ProtectionStore(home: home).requireUnprotected(entry.path)
         guard geteuid() != 0, entry.canTrash, entry.kind == .installer, now.timeIntervalSince(planCreated) >= 0, now.timeIntervalSince(planCreated) <= 300 else { throw AlterError.refused("确认已过期或项目不可整理，请重新扫描。") }
         let url = URL(fileURLWithPath: entry.path)
         let parent = try FileSafety.openDirectory(url.deletingLastPathComponent().path)

@@ -3,13 +3,32 @@ import AppKit
 import AlterCore
 
 enum AppPage: String, CaseIterable, Identifiable {
-    case overview = "总览", clean = "智能清理", storage = "空间透镜", apps = "应用管理", purge = "项目产物", installer = "安装包", optimize = "系统维护", status = "系统状态", companion = "Alter 陪伴", history = "操作记录", settings = "设置"
+    case overview = "总览", clean = "智能清理", storage = "空间透镜", files = "文件整理", apps = "应用管理", startup = "启动项", purge = "项目产物", installer = "安装包", optimize = "系统维护", status = "系统状态", security = "安全检查", protection = "保护名单", companion = "Alter 陪伴", history = "操作记录", settings = "设置"
     var id: String { rawValue }
-    var icon: String { switch self { case .purge: "shippingbox"; case .installer: "archivebox"; case .optimize: "wrench.and.screwdriver"; case .status: "waveform.path.ecg"; case .overview: "square.grid.2x2"; case .clean: "sparkles"; case .storage: "internaldrive"; case .apps: "square.stack.3d.up"; case .companion: "moon.stars"; case .history: "clock.arrow.circlepath"; case .settings: "slider.horizontal.3" } }
-    var expression: Int { switch self { case .purge: 6; case .installer: 4; case .optimize: 20; case .status: 8; case .overview: 1; case .clean: 4; case .storage: 15; case .apps: 17; case .companion: 2; case .history: 23; case .settings: 18 } }
+    var icon: String { switch self { case .files: "doc.on.doc"; case .startup: "power"; case .security: "checkmark.shield"; case .protection: "lock.shield"; case .purge: "shippingbox"; case .installer: "archivebox"; case .optimize: "wrench.and.screwdriver"; case .status: "waveform.path.ecg"; case .overview: "square.grid.2x2"; case .clean: "sparkles"; case .storage: "internaldrive"; case .apps: "square.stack.3d.up"; case .companion: "moon.stars"; case .history: "clock.arrow.circlepath"; case .settings: "slider.horizontal.3" } }
+    var expression: Int { switch self { case .files: 14; case .startup: 7; case .security: 13; case .protection: 16; case .purge: 6; case .installer: 4; case .optimize: 20; case .status: 8; case .overview: 1; case .clean: 4; case .storage: 15; case .apps: 17; case .companion: 2; case .history: 23; case .settings: 18 } }
 }
 @MainActor final class AppModel: ObservableObject {
     @Published var page: AppPage = .overview { didSet { expression = page.expression } }
+    @Published var fileCollection: FileCollection = .large
+    @Published var managedFiles: [IndexedFile] = []
+    var duplicateReviewGroups: [DuplicateGroup] = []
+    @Published var duplicateGroups: [DuplicateGroup] = []
+    @Published var fileSelection: Set<String> = []
+    @Published var fileCanNext = false
+    @Published var largeFileMB = 100
+    @Published var oldFileDays = 180
+    @Published var managementNote = "复用空间透镜的索引，按需检查文件。"
+    @Published var protectedPaths: [String] = []
+    @Published var startupItems: [StartupItem] = []
+    @Published var securityFindings: [AuditFinding] = []
+    @Published var signatureFinding: AuditFinding?
+    @Published var securityDate: Date?
+    @Published var brewUpdates: [BrewUpdate] = []
+    @Published var brewNote = "按需检查 Homebrew 应用更新。"
+    @Published var managedApps: [ManagedApp] = []
+    @Published var appUpdate: AppUpdate?
+    @Published var appTab = 0
     @Published var appQuery = ""
     @Published var candidates: [MoleCandidate] = []
     @Published var candidateFeature: MoleFeature = .clean
@@ -40,22 +59,39 @@ enum AppPage: String, CaseIterable, Identifiable {
     @Published var diskSnapshot: DiskSnapshot?
     @Published var lensBubbles: [LensBubble] = []
     @Published var lensHover: String?
-    @Published var lensQuery = ""
+    @Published var lensQuery = "" { didSet { filterLensEntries() } }
     @Published var lensPathInput = "~"
     @Published var purgePathInput = ""
-    @Published var lensRemainderOnly = false
+    @Published var lensRemainderOnly = false { didSet { filterLensEntries() } }
     @Published var lensTrail: [String] = []
     @Published var lensPosition = -1
     @Published var lensStarted: Date?
     @Published var lensError: String?
-    @Published var lensPage = 0
-    var lensEntries: [DiskEntry] {
-        let visible = Set(lensBubbles.filter { !$0.remainder }.map(\.id))
-        return (diskSnapshot?.entries ?? []).filter {
-            (!lensRemainderOnly || !visible.contains($0.path)) && (lensQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(lensQuery))
-        }.sorted { $0.size == $1.size ? $0.path < $1.path : $0.size > $1.size }
+    @Published var lensPage = 0 { didSet { filterLensEntries() } }
+    var diskIndex: DiskIndex?
+    @Published var indexDate: Date?
+    @Published var indexStale = false
+    @Published var lensEntries: [DiskEntry] = []
+    @Published var lensTotalEntries = 0
+    private var lensQueryGeneration = UUID()
+    private var lensQueryTask: Task<Void,Never>?
+    func filterLensEntries() {
+        guard let index = diskIndex, let snapshot = diskSnapshot else { lensEntries=[]; lensTotalEntries=0; return }
+        let query = lensQuery, currentPage = lensPage
+        let visible = lensRemainderOnly ? Set(lensBubbles.filter { !$0.remainder }.map(\.id)) : []
+        let generation = UUID(); lensQueryGeneration = generation
+        lensQueryTask?.cancel()
+        lensQueryTask = Task {
+            do {
+                if !query.isEmpty { try await Task.sleep(for:.milliseconds(180)) }
+                guard !Task.isCancelled else { return }
+                let result = try await Task.detached(priority:.utility) { try index.children(snapshot.path, query:query, excluding:visible, page:currentPage) }.value
+                guard generation == lensQueryGeneration else { return }
+                lensEntries=result.entries; lensTotalEntries=result.count
+            } catch { if generation == lensQueryGeneration && !Task.isCancelled { lensError=error.localizedDescription } }
+        }
     }
-    var pagedLensEntries: [DiskEntry] { Array(lensEntries.dropFirst(lensPage * 100).prefix(100)) }
+    var pagedLensEntries: [DiskEntry] { lensEntries }
 
     @Published var applications: [ScanEntry] = []
     @Published var selected: Set<String> = []
@@ -106,17 +142,26 @@ enum AppPage: String, CaseIterable, Identifiable {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         analyzePath(url.path)
     }
-    func analyzePath(_ path: String, historyIndex: Int? = nil) {
+    func analyzePath(_ path: String, historyIndex: Int? = nil, refresh: Bool = false) {
         let path = (path as NSString).expandingTildeInPath
         guard path.hasPrefix("/") else { lensError = "请输入绝对路径或以 ~ 开头的路径。"; return }
         guard let flag = begin("Mole 正在统计目录大小，可以随时停止…") else { return }
         page = .storage; lensStarted = Date(); lensError = nil; lensHover = nil
-        let reader = MoleReader(resources: Assets.root)
+        let reader = MoleReader(resources: Assets.root), previous = diskIndex
         worker = Task {
             do {
-                let result = try await Task.detached(priority: .utility) { try reader.analyze(path, cancellation: flag) }.value
+                let (index, result, bubbles, issues, reused) = try await Task.detached(priority: .utility) {
+                    let canonical = try FileSafety.physicalReadPath(path)
+                    let cached = try previous?.hasDirectory(canonical) ?? false
+                    let index: DiskIndex
+                    if !refresh, cached, let previous { index = previous }
+                    else { index = try reader.index(refresh && cached ? previous!.root : canonical, cancellation: flag) }
+                    let result = try index.snapshot(canonical)
+                    return (index, result, LensLayout.pack(result.entries, totalSize:result.totalSize), try index.issues(), !refresh && cached)
+                }.value
                 guard !flag.isCancelled else { throw AlterError.refused("分析已取消。") }
-                diskSnapshot = result; lensPathInput = result.path; lensBubbles = LensLayout.pack(result.entries)
+                diskIndex = index; indexDate = index.created; if !reused { indexStale = false }
+                diskSnapshot = result; lensPathInput = result.path; lensBubbles = bubbles
                 lensRemainderOnly = false; lensQuery = ""; lensPage = 0
                 if let index = historyIndex { lensPosition = index }
                 else if lensTrail.indices.contains(lensPosition), lensTrail[lensPosition] == result.path { }
@@ -125,8 +170,8 @@ enum AppPage: String, CaseIterable, Identifiable {
                     if lensTrail.count > 64 { lensTrail.removeFirst() }
                     lensPosition = lensTrail.count - 1
                 }
-                storageSummary = "\(byteText(result.totalSize)) · \(result.entries.count) 个直接子项 · Mole 统计 \(result.totalFiles) 个文件"
-                activity = "空间分析完成；结果可能不包含 macOS 隐私权限拒绝访问的内容。"; expression = 15
+                storageSummary = "\(byteText(result.totalSize)) · \(result.childCount) 个直接子项 · Mole 统计 \(result.totalFiles) 个文件"
+                activity = (reused ? "已从索引打开，没有重新扫描。" : "目录索引已建立，下钻和返回直接读取索引。") + (issues > 0 ? "有 \(issues) 个未完整读取的目录，可单独选择后分析。" : ""); expression = 15
             } catch { lensError = error.localizedDescription; activity = "分析未完成，原有结果已保留。" }
             lensStarted = nil; busy = false
         }
@@ -190,7 +235,7 @@ enum AppPage: String, CaseIterable, Identifiable {
                 }
                 activity = "已将 \(movedCount) / \(plan.entries.count) 项移入废纸篓，可从操作记录恢复。" + (flag.isCancelled ? "其余项目已停止处理。" : ""); expression = 22
             } catch { errorMessage = error.localizedDescription; activity = "操作已停止，请查看说明。"; expression = 13 }
-            busy = false; refreshCapacity()
+            busy = false; indexStale = true; refreshCapacity()
         }
     }
     func restore(_ record: TrashRecord) {
@@ -201,7 +246,7 @@ enum AppPage: String, CaseIterable, Identifiable {
         do {
             try TrashService(home: home).restore(record)
             if let i = records.firstIndex(where: { $0.id == record.id }) { records[i].restored = true }
-            try history.save(records); activity = "已恢复到原位置。"; expression = 8
+            try history.save(records); indexStale = true; activity = "已恢复到原位置。"; expression = 8
         } catch { errorMessage = error.localizedDescription }
     }
     func reveal(_ path: String) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }

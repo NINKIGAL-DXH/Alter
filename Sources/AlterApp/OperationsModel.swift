@@ -6,6 +6,7 @@ extension AppModel {
     var operations: MoleOperations { MoleOperations(resources: Assets.root) }
     func previewLensItem(_ entry: DiskEntry) {
         guard !busy else { return }
+        duplicateReviewGroups = []
         candidateFeature = .clean; uninstallTarget = nil; discoveryRoot = nil
         candidates = [MoleCandidate(category: "file", path: entry.path, bytes: entry.size, note: "你在空间透镜中选择的项目")]
         candidateSelection = [entry.path]; discoveryNotes = "来自空间透镜的手动选择。"; page = .clean
@@ -20,6 +21,7 @@ extension AppModel {
     }
     func discover(_ feature: MoleFeature, path: String? = nil) {
         guard let flag = begin("Mole 正在生成只读预览…") else { return }
+        duplicateReviewGroups = []
         candidateFeature = feature; candidateSelection = []; candidates = []; candidateQuery = ""; uninstallTarget = feature == .uninstall ? path : nil
         page = feature == .clean ? .clean : feature == .purge ? .purge : feature == .installer ? .installer : .apps
         discoveryRoot = path; discoveryNotes = "正在扫描，尚未修改文件。"; let ops = operations
@@ -63,12 +65,15 @@ extension AppModel {
     func executeReviewed() {
         guard let plan = reviewedPlan, let flag = begin("正在逐项复核并移入废纸篓…") else { return }
         showReviewed = false; reviewedPlan = nil
-        let ops = operations, home = self.home, app = uninstallTarget, root = discoveryRoot, feature = candidateFeature
+        let ops = operations, home = self.home, app = uninstallTarget, root = discoveryRoot, feature = candidateFeature, duplicates = duplicateReviewGroups
         worker = Task {
             var moved = 0
             do {
                 guard records.count + plan.items.count <= 200 else { throw AlterError.refused("恢复记录已满。请先处理现有记录，Alter 不会覆盖历史记录。") }
                 try history.save(records)
+                if !duplicates.isEmpty {
+                    try await Task.detached(priority:.utility) { try DuplicateFinder.revalidate(duplicates, selected:Set(plan.items.map(\.path)), cancellation:flag) }.value
+                }
                 // Refresh Mole's complete uninstall discovery, including surviving siblings.
                 if let app {
                     guard !isRunning(app) else { throw AlterError.refused("应用正在运行，请先退出。") }
@@ -93,7 +98,7 @@ extension AppModel {
                 }
                 activity = "已将 \(moved) / \(plan.items.count) 项移入废纸篓，可在操作记录恢复。"; expression = 22
             } catch { errorMessage = "已移动 \(moved) 项；其余停止。\n" + error.localizedDescription; activity = "操作已停止，请查看结果。" }
-            busy = false; refreshCapacity()
+            busy = false; indexStale = true; refreshCapacity()
         }
     }
     func isRunning(_ app: String) -> Bool {

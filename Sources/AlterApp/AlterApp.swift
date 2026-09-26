@@ -32,7 +32,7 @@ import AlterCore
         }
     }
     var body: some Scene {
-        WindowGroup("Alter") {
+        WindowGroup("Alter", id: "main") {
             ContentView().environmentObject(model).tint(Color(red: 0.64, green: 0.23, blue: 0.35))
                 .frame(minWidth: 960, minHeight: 700)
                 .preferredColorScheme(model.appearance == 0 ? nil : model.appearance == 1 ? .light : .dark)
@@ -42,5 +42,12 @@ import AlterCore
                 CommandGroup(replacing: .appInfo) { Button("关于 Alter") { model.page = .settings } }
                 CommandGroup(after: .appInfo) { Button("停止当前扫描") { model.cancel() }.keyboardShortcut(".", modifiers: .command).disabled(!model.busy) }
             }
+        MenuBarExtra {
+            AlterMenuView().environmentObject(model)
+        } label: {
+            Image(systemName: "circle.hexagongrid.fill")
+            if let status = model.systemStatus { Text(String(format:"%.0f%%", status.cpu)).monospacedDigit() }
+        }.menuBarExtraStyle(.window)
+
     }
 }

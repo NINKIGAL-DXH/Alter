@@ -10,14 +10,15 @@ public struct LensBubble: Identifiable, Sendable {
 /// Tangent circle packing. A single scale is applied to sqrt(bytes), so areas
 /// remain proportional; tiny entries are grouped rather than artificially enlarged.
 public enum LensLayout {
-    public static func pack(_ input: [DiskEntry]) -> [LensBubble] {
+    public static func pack(_ input: [DiskEntry], totalSize: Int64? = nil) -> [LensBubble] {
         let sorted = input.filter { $0.size > 0 }.sorted { $0.size == $1.size ? $0.path < $1.path : $0.size > $1.size }
         guard let largest = sorted.first else { return [] }
         let visible = Array(sorted.prefix(22).prefix { Double($0.size) / Double(largest.size) >= 0.003 })
         var items = visible.map { ($0.path, $0.name, $0.size, $0.isDir, false) }
-        let rest = sorted.dropFirst(visible.count).reduce(Int64(0)) { value, entry in
+        var rest = sorted.dropFirst(visible.count).reduce(Int64(0)) { value, entry in
             let sum = value.addingReportingOverflow(entry.size); return sum.overflow ? Int64.max : sum.partialValue
         }
+        if let totalSize { rest = max(rest, totalSize - visible.reduce(Int64(0)) { $0 + $1.size }) }
         if rest > 0 { items.append(("alter:remainder", "其他项目", rest, false, true)) }
         items.sort { $0.2 > $1.2 }
         struct Circle { var x: Double, y: Double, r: Double }

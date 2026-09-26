@@ -42,6 +42,21 @@ Alter 使用真实的 [tw93/Mole](https://github.com/tw93/Mole) 内核，提供�
 - Mole 的 CLI 自更新、自卸载、Touch ID/PAM 配置、shell 补全和交互式白名单编辑没有移植为 Alter 按钮。已有 Mole 白名单会被读取，扫描不写配置。
 - 不提供清空废纸篓、任意命令输入或关闭 Gatekeeper 的操作。完整范围见 [功能矩阵](docs/FEATURES.md)。
 
+## 0.3 开发版：空间索引与管理工具
+
+当前工作树加入了以下功能；正式下载仍以 Release 中通过双架构检查的版本为准。
+
+- **空间透镜**：一次建立可浏览的目录索引，下钻与返回复用结果；显式刷新才重新统计。圆形布局在后台计算，详情按页从 SQLite 读取，隐藏项目与应用包可以查看。
+- **文件整理**：可调阈值的大文件、按修改时间筛选的旧文件、完整 SHA-256 重复文件检查。重复文件每组至少保留一份，移除前再次验证保留副本。
+- **应用管理**：应用卸载、疑似残留、Sparkle HTTPS 更新订阅、App Store 更新入口、Homebrew 单个应用更新预览。带安装脚本或系统安装器的 cask 交给所属更新器，不静默执行。
+- **启动项**：读取 LaunchAgents / LaunchDaemons，支持当前用户 LaunchAgent 的启用和停用；现代登录项及系统服务由 macOS 设置管理。
+- **保护名单**：持久保存文件或文件夹排除项；文件清理的预览和执行、启动项变更都检查。它不是系统维护任务的全局文件写入防火墙。
+- **安全检查**：读取 SIP、Gatekeeper、FileVault、防火墙状态与应用签名；未知状态不会显示为安全，不宣称提供恶意软件扫描。
+- **菜单栏**：按需查看真实 CPU、内存和可用空间，复用现有状态数据。
+- **材质与优化**：保留原生 clear Liquid Glass，增加饱和色光与反射边缘；21 项 Mole 维护增加适用条件、影响与恢复说明。
+
+索引和去重都有磁盘、内存、数量、时间预算；权限不足和达到预算会明确说明。索引仅供展示，不作为删除授权。详细实现、验证状态和参考来源见 [0.3 集成记录](docs/IMPLEMENTATION-0.3.md)。
+
 ## 安装
 
 最低 **macOS 14**，原生 Liquid Glass 需要 **macOS 26**。到 [Releases](https://github.com/NINKIGAL-DXH/Alter/releases) 选择：
@@ -78,7 +93,7 @@ Mole 的部分规则需要读取归档目录或配置内容，并非所有扫描
 
 - 上游：[tw93/Mole V1.55.0 固定提交](https://github.com/tw93/Mole/tree/69ab325d4f05af0ea21aeeeae544046c9f04a76b)
 - [`Vendor/Mole`](Vendor/Mole) 保存 118 个上游文件及 SHA-256 清单，原文件保持不变。旧版纯保护核心另行保留，用于兼容测试。
-- [`scripts/build-mole.py`](scripts/build-mole.py) 在临时构建副本中应用两处透明补丁：分析缓存改到私有任务目录；状态进程查询读取原生快照。解析、发现、保护与维护规则来自 Mole。
+- [`scripts/build-mole.py`](scripts/build-mole.py) 在临时构建副本中应用透明补丁：分析缓存改到私有任务目录、状态进程查询读取原生快照，并编入 Alter 的流式目录索引适配器。解析、发现、保护与维护规则来自 Mole。
 - 预览适配器禁止写入，卸载时仅适配只读沙盒中的权限预检；真正移动由独立原生检查执行。此适配不授权任何上游批量删除入口。
 - Go 与实际链接模块的许可证随 app 提供，版本记录在 `Kernel/licenses/modules.json`。每个 Release 提供对应源码。
 

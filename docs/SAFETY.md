@@ -42,7 +42,7 @@ The development verification did not execute real maintenance or authenticate su
 
 - One GUI worker at a time. Go targets 256 MiB and two execution threads; the host samples the dedicated process group every 0.5 seconds and stops around 512 MiB resident memory or 64 subprocesses. These are sampled limits, not guaranteed hard ceilings.
 - stdout/stderr are bounded to 8 MiB each. Discovery is capped at 900 seconds, status at 60, each native ps query at 10 and maintenance at 600. Cancellation kills the dedicated worker group, never arbitrary user processes. Root descendants or kernel-blocked operations may not be immediately observable or terminable by the current user.
-- Discovery retains at most 5,000 candidates; exceeding the display budget is explicitly reported. Analysis rejects more than 50,000 direct children. The UI renders at most 23 circles and pages the full child list by 100. This does not imply an arbitrary filesystem can always be completely scanned within budget.
+- Discovery retains at most 5,000 candidates; exceeding the display budget is explicitly reported. The streaming index bounds itself at 2 million metadata rows / a 512 MiB database. Space Lens retains only 256 entries for circle layout and fetches complete child lists from disk in pages of 100. The legacy one-level analyzer used for app sizes retains its 50,000-row output cap. This does not imply an arbitrary filesystem can always be completely scanned within budget.
 - Images are thumbnail-decoded and lazily displayed with advisory 20 MB / 16-item cache limits. Framework allocations and visible images add memory. Memory pressure requests cancellation and cache eviction; OOM cannot be ruled out.
 - Identity check followed by rename is not an atomic compare-and-rename. A malicious same-user process can race the final step or mutate a tree after fingerprinting. Parent descriptors and rechecks reduce accidental races but do not isolate a compromised account.
 - A crash after rename but before history persistence leaves a recoverable uniquely named item in Trash, possibly without a history row. Native error reporting cannot roll back every partial maintenance operation.
@@ -50,6 +50,33 @@ The development verification did not execute real maintenance or authenticate su
 
 ## Verification
 
-The 25 Swift test methods cover pinned Mole discovery/guards, real status JSON, running-cache protection, temporary app/artifact/installers, physical path constraints, cancellation/output limits, tree changes, Trash restore/conflicts, history safety and circle layout. Mutation fixtures are UUID directories created by the tests. Some upstream diagnostics and status read actual system metadata; no test invokes actual system maintenance or deletes user files.
+The 33 Swift test methods cover pinned Mole discovery/guards, real status JSON, running-cache protection, temporary app/artifact/installers, physical path constraints, cancellation/output limits, tree changes, Trash restore/conflicts, history safety and circle layout. Mutation fixtures are UUID directories created by the tests. Some upstream diagnostics and status read actual system metadata; no test invokes actual system maintenance or deletes user files.
 
 Local CLT runs use `scripts/test-local.py` over those same methods. GitHub runs XCTest and packages/validates both architectures. App resource smoke checks validate all 23 image crops, the icon, full shell source hashes, both Go workers and linked dependency license metadata.
+
+## Management additions in 0.3
+
+Protected paths are reloaded during file previews and again at the physical
+move. Exclusions protect ancestors of a selected protected child as well as
+its descendants. A corrupt protection file fails closed. This list covers
+native file moves and supported startup/cask changes; it is not a sandbox
+around every upstream maintenance handler. Maintenance keeps Mole's separate
+task whitelist and explicit per-task consent.
+
+Duplicate detection reads regular, locally available files in 1 MiB chunks,
+checks identity before and after, avoids hardlink aliases, and revalidates a
+retained identical copy before executing selected removals. On any failure,
+it stops rather than treating a skipped file as verified equal.
+
+Startup edits only target validated current-user LaunchAgents. No configuration
+files are deleted and no service is forcibly killed. System service management
+is handed to System Settings. App updates are a separate non-Trash operation;
+preview shows package/version/application paths. Homebrew's automatic path
+rejects script/pkg/custom-target/dependency artifacts and unofficial taps,
+disables auto-update/cleanup/analytics, rechecks the receipt, and verifies the
+installed version. App Store and Sparkle installations stay with the owner's
+updater. No real app updates or startup mutations are run by the test suite.
+
+Security results state what was actually read or verified. Signature validity
+is not a malware assessment or a notarization verdict. The security page never
+disables SIP, Gatekeeper, encryption or firewall settings.

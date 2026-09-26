@@ -98,6 +98,7 @@ struct PanelSurface: ViewModifier {
             content.background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: radius))
         } else if #available(macOS 26.0, *) {
             content.glassEffect(.clear, in: .rect(cornerRadius: radius))
+                .overlay { RoundedRectangle(cornerRadius: radius).strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .clear, .white.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.7).allowsHitTesting(false) }
         } else {
             content.background(.ultraThinMaterial.opacity(0.45), in: RoundedRectangle(cornerRadius: radius))
                 .overlay { RoundedRectangle(cornerRadius: radius).strokeBorder(.white.opacity(0.24), lineWidth: 0.6) }
@@ -128,7 +129,9 @@ struct AlterBackdrop: View {
             if reduceTransparency { Color(nsColor: .windowBackgroundColor) }
             else {
                 WindowGlass()
-                LinearGradient(colors: [Color(red: 0.68, green: 0.63, blue: 0.83).opacity(0.13), .clear, Color(red: 0.82, green: 0.61, blue: 0.60).opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                RadialGradient(colors: [Color(red: 0.48, green: 0.18, blue: 0.96).opacity(0.26), .clear], center: .topLeading, startRadius: 0, endRadius: 650)
+                RadialGradient(colors: [Color(red: 0.98, green: 0.15, blue: 0.40).opacity(0.19), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 600)
+                RadialGradient(colors: [Color.cyan.opacity(0.12), .clear], center: .trailing, startRadius: 0, endRadius: 420)
             }
         }.ignoresSafeArea()
     }

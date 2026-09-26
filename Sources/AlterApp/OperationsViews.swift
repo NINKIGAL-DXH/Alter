@@ -91,11 +91,12 @@ struct OptimizeView: View {
     var body: some View {
         PageHeading(title: "让 Mac，回到好状态。", subtitle: "Mole 系统维护 · 一次检查一项，一次确认一项")
         CompanionBanner(number: 20, title: "有需要，再做改变。", subtitle: "维护可能重建缓存、修改偏好或数据库。\n先看具体影响，再决定是否执行。", height: 210)
+        Text("按症状选择维护：搜索异常、图标异常、网络异常各有对应检查。macOS 会自动管理内存与多数缓存；定期清空内存或重建全部缓存不保证提速。").font(.system(size: 12)).foregroundStyle(.secondary).contentPanel()
         VStack(alignment: .leading, spacing: 12) {
             ForEach(model.optimizeTasks) { task in
                 HStack(spacing: 16) {
                     Image(systemName: "wrench.and.screwdriver").foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 6) { Text(task.alterTitle).font(.system(size: 13, weight: .medium)); Text(task.detail).font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3) }
+                    VStack(alignment: .leading, spacing: 6) { Text(task.alterTitle).font(.system(size: 13, weight: .medium)); Text(task.guidance.when).font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3) }
                     Spacer(); Button("检查与预览") { model.previewOptimize(task) }.glassAction().disabled(model.busy)
                 }.padding(.vertical, 8)
                 Divider()
@@ -112,6 +113,7 @@ struct OptimizeConfirmation: View {
         VStack(alignment: .leading, spacing: 17) {
             Text(model.optimizePreview?.task.alterTitle ?? "单项维护").font(.system(size: 23, weight: .semibold))
             Text(model.optimizePreview?.task.detail ?? "").font(.system(size: 13)).lineSpacing(4)
+            if let task = model.optimizePreview?.task { OptimizeAdvice(task: task) }
             Text("Mole 预检结果：" + (model.optimizePreview?.outcome ?? "未知")).font(.system(size: 11)).foregroundStyle(.secondary)
             ScrollView { Text(model.optimizePreview?.output ?? "").font(.system(size: 11, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 220).contentPanel()
             Text("此操作可能更改设置、重启服务、移除历史记录或重建数据库，具体范围以上方任务说明为准。它不是移入废纸篓，Alter 不提供一键恢复；执行途中停止可能已产生部分更改。请先保存工作。").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4)

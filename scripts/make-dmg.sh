@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-version="${ALTER_VERSION:-0.2.0}"
+version="${ALTER_VERSION:-0.3.0}"
 arch="${ALTER_ARCH:-$(uname -m)}"
 [[ "$arch" == arm64 || "$arch" == x86_64 ]] || exit 1
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][a-zA-Z0-9]+)*$ ]] || exit 1

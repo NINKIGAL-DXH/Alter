@@ -19,6 +19,14 @@ after = 'func moleCacheRoot(home string) string {\n\tif dir := os.Getenv("ALTER_
 source = cache.read_text()
 assert source.count(before) == 1, 'Cache patch no longer matches pinned Mole'
 cache.write_text(source.replace(before, after))
+# Alter-owned streaming index; vendored upstream is not modified.
+shutil.copy2(root / 'Integration/Mole/alter_index.go', stage / 'source/cmd/analyze/alter_index.go')
+main = stage / 'source/cmd/analyze/main.go'
+source = main.read_text()
+needle = '\tgo pruneAnalyzerCache()'
+assert source.count(needle) == 1
+source = source.replace(needle, '\tif os.Getenv("ALTER_MOLE_INDEX") == "1" {\n\t\tif err := runAlterIndex(abs); err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }; return\n\t}\n' + needle)
+main.write_text(source)
 # macOS denies set-id /bin/ps in Seatbelt. Consume fresh, bounded native ps
 # snapshots for the three fixed queries; metric parsers remain upstream.
 metrics = stage / 'source/cmd/status/metrics.go'

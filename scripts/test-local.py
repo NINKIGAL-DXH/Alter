@@ -20,6 +20,7 @@ func XCTAssertNotEqual<T: Equatable>(_ a: @autoclosure () throws -> T, _ b: @aut
 func XCTAssertLessThanOrEqual<T: Comparable>(_ a: T, _ b: T, file: String = #filePath, line: Int = #line) { if a > b { XCTFail(file: file, line: line) } }
 func XCTAssertThrowsError<T>(_ expression: @autoclosure () throws -> T, file: String = #filePath, line: Int = #line) { do { _ = try expression(); XCTFail("Expected refusal", file: file, line: line) } catch {} }
 @main struct RunTests { static func main() {
+setbuf(stdout, nil)
 '''
 for name in methods:
     shim += 'do { let test = SafetyTests(); let before = failures; do { try test.setUpWithError(); try test.' + name + '() } catch { XCTFail(String(describing: error)) }; do { try test.tearDownWithError() } catch { XCTFail(String(describing: error)) }; print((failures == before ? "PASS " : "FAIL ") + "' + name + '") }\n'
