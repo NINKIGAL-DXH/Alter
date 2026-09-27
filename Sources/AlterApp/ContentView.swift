@@ -27,8 +27,8 @@ struct ToolsContentView: View {
                         }
                     }.buttonStyle(.plain).padding(.horizontal, 17)
                 }
-                Button { model.page = .anchor } label: { Label("Anchor · 静静停留", systemImage: "sparkle") }
-                    .buttonStyle(.plain).padding(.horizontal, 17)
+                Button { model.page = .anchor } label: { Label("Anchor 屏保", systemImage: "sparkle").frame(maxWidth: .infinity).padding(.vertical, 5) }
+                    .glassAction(prominent: true).padding(.horizontal, 17).help("设置文字并实时预览 Anchor")
                 Label("你的文件，由你决定", systemImage: "checkmark.shield").font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 17).padding(.bottom, 15)
             }.navigationSplitViewColumnWidth(min: 195, ideal: 215, max: 245)
         } detail: {

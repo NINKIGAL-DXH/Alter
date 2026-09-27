@@ -8,59 +8,76 @@ private typealias AnchorState<Value> = SwiftUI.State<Value>
 
 struct AnchorSetupView: View {
     @EnvironmentObject var model: AppModel
-    @AnchorState<String> private var draft = ""
     @AnchorState<String?> private var note: String?
     var body: some View {
-        PageHeading(title: "Anchor", subtitle: "让一句话，静静停在光里。")
-        ZStack(alignment: .bottomLeading) {
-            ExpressionImage(number: model.anchorPicture, pixels: 1400).frame(height: 310).clipped()
-            LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 10) {
-                Text("A N C H O R").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.8))
-                Text("只留下，画面与你的文字。").font(.system(size: 27, weight: .light, design: .serif)).foregroundStyle(.white)
-                Text("进入后冻结整理、维护和状态刷新；退出后由你手动继续。").font(.callout).foregroundStyle(.white.opacity(0.8))
-            }.padding(28)
-        }.frame(height: 310).clipShape(RoundedRectangle(cornerRadius: 24))
+        PageHeading(title: "Anchor", subtitle: "写下你的话，让它静静停在光里。")
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("你的文字").font(.headline); Spacer(); Text("用空行分段 · 每段依次呈现").font(.caption).foregroundStyle(.secondary) }
+            HStack { Text("你的文字").font(.headline); Spacer(); Text("空行分段 · 即时预览").font(.caption).foregroundStyle(.secondary) }
             ZStack(alignment: .topLeading) {
-                TextEditor(text: Binding(get: { draft }, set: { value in
-                    if value.utf8.count <= 131_072 && value.count <= AnchorText.maximumCharacters { draft = value }
-                    else { note = "文字超过 8,000 字，本次输入未采用；原有文字仍保留。" }
+                TextEditor(text: Binding(get: { model.anchorText }, set: { value in
+                    do { try model.setAnchorText(value); note = nil }
+                    catch { note = "文字最多 8,000 字，本次输入未采用；原有文字仍保留。" }
                 })).font(.system(size: 17, design: .serif)).scrollContentBackground(.hidden).padding(8)
-                if draft.isEmpty { Text("在这里粘贴你想留下的话…").foregroundStyle(.secondary).padding(13).allowsHitTesting(false) }
-            }.frame(height: 150).background(.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityLabel("Anchor 展示文字")
+                if model.anchorText.isEmpty { Text("在这里输入或粘贴你想留下的话…").foregroundStyle(.secondary).padding(13).allowsHitTesting(false) }
+            }.frame(height: 145).background(.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
             HStack {
-                Text("\(draft.count) / 8,000 字 · 仅保存在本机").font(.caption).foregroundStyle(.secondary)
+                Text("\(model.anchorText.count) / 8,000 字").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("保存文字") { save() }.glassAction()
+                Label("自动保存 · 更新后保留", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
             }
             if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
         }.contentPanel()
+        AnchorInlinePreview(text: model.anchorText, picture: model.anchorPicture)
         HStack(spacing: 20) {
             Toggle("轮播全部 23 张角色图片", isOn: $model.anchorSlideshow)
-            if !model.anchorSlideshow {
-                Picker("画面", selection: $model.anchorPicture) { ForEach(Assets.expressions) { Text($0.name).tag($0.id) } }.frame(maxWidth: 250)
-            }
+            Picker(model.anchorSlideshow ? "预览画面" : "固定画面", selection: $model.anchorPicture) {
+                ForEach(Assets.expressions) { Text($0.name).tag($0.id) }
+            }.frame(maxWidth: 250)
             Spacer()
         }.contentPanel()
         HStack {
             VStack(alignment: .leading, spacing: 5) {
-                Text("Esc 退出 · ⌘⇧A 随时切换").font(.callout)
-                Text("应用内屏保，可切换全屏；不改变 macOS 锁屏与休眠设置。").font(.caption).foregroundStyle(.secondary)
+                Text("文字只保存在本机，关闭或更新 Alter 后仍保留。").font(.callout)
+                Text("开始后冻结原有功能；退出按钮或 Esc 返回这里。").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("进入 Anchor", systemImage: "sparkle") { if save() { model.enterAnchor() } }
+            Button("启动 Anchor", systemImage: "play.fill") { model.enterAnchor() }
                 .glassAction(prominent: true).disabled(model.busy)
         }
         if model.busy { Text("当前任务结束后即可进入。文件操作不会被强行暂停在中途。").font(.caption).foregroundStyle(.secondary) }
         if let message = model.anchorPreparingNote { Text(message).font(.callout).foregroundStyle(.secondary) }
-        Text("未填写文字时仅显示 Anchor 标识。长段落自动分页，原文不会被改写。").font(.caption).foregroundStyle(.secondary)
-            .onAppear { draft = model.anchorText }
+        Text("未填写文字时显示 Anchor 标识。应用内屏保，不改变 macOS 的锁屏与休眠设置。").font(.caption).foregroundStyle(.secondary)
     }
-    @discardableResult private func save() -> Bool {
-        do { _ = try AnchorText.pages(draft); model.anchorText = draft; note = "已保存在这台 Mac。"; return true }
-        catch { note = error.localizedDescription; return false }
+}
+
+/// Uses the same glass-letter renderer as the screen saver, not a separate mockup.
+private struct AnchorInlinePreview: View {
+    let text: String
+    let picture: Int
+    @AnchorState<Int> private var page = 0
+    private var pages: [String] { (try? AnchorText.pages(text)) ?? [] }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("实时预览", systemImage: "eye").font(.headline)
+                Spacer()
+                if pages.count > 1 {
+                    Button { page = max(0, page - 1) } label: { Image(systemName: "chevron.left") }.disabled(page == 0).accessibilityLabel("预览上一段")
+                    Text("\(min(page + 1, pages.count)) / \(pages.count)").font(.caption).monospacedDigit()
+                    Button { page = min(pages.count - 1, page + 1) } label: { Image(systemName: "chevron.right") }.disabled(page >= pages.count - 1).accessibilityLabel("预览下一段")
+                }
+            }
+            GeometryReader { geometry in
+                ZStack {
+                    ExpressionImage(number: picture, pixels: 1200).frame(width: geometry.size.width, height: 310).clipped().blur(radius: 24).overlay(.black.opacity(0.3))
+                    ExpressionImage(number: picture, pixels: 1200, fit: .fit).frame(width: geometry.size.width, height: 310)
+                    LinearGradient(colors: [.clear, .black.opacity(0.35)], startPoint: .center, endPoint: .bottom)
+                    CrystalWords(text: pages.isEmpty ? "Anchor" : pages[min(page, pages.count - 1)], width: max(240, geometry.size.width - 64), height: 150)
+                        .position(x: geometry.size.width / 2, y: 216)
+                }.frame(width: geometry.size.width, height: 310).clipped().clipShape(RoundedRectangle(cornerRadius: 20))
+            }.frame(height: 310).environment(\.colorScheme, .dark)
+        }.onChange(of: text) { _, _ in page = 0 }
     }
 }
 

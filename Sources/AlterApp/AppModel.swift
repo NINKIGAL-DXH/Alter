@@ -13,7 +13,7 @@ enum AppPage: String, CaseIterable, Identifiable {
     @Published var anchorPreparingNote: String?
     @Published var anchorPages: [String] = []
     @Published var anchorPictureIDs: [Int] = []
-    @AppStorage("anchorText") var anchorText = ""
+    @Published private(set) var anchorText = AnchorPreferences().loadText()
     @AppStorage("anchorSlideshow") var anchorSlideshow = true
     @AppStorage("anchorPicture") var anchorPicture = 2
     @AppStorage("maintenanceHandoffUntil") var maintenanceHandoffUntil = 0.0
@@ -138,6 +138,11 @@ enum AppPage: String, CaseIterable, Identifiable {
         if let values = try? URL(fileURLWithPath: home).resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey]) {
             totalCapacity = Int64(values.volumeTotalCapacity ?? 0); freeCapacity = Int64(values.volumeAvailableCapacity ?? 0)
         }
+    }
+    func setAnchorText(_ text: String) throws {
+        guard !toolsFrozen else { throw AlterError.refused("退出 Anchor 后可以修改文字。") }
+        try AnchorPreferences().saveText(text)
+        anchorText = text
     }
     func enterAnchor() {
         do {

@@ -453,4 +453,29 @@ final class SafetyTests: XCTestCase {
         XCTAssertTrue(pages.allSatisfy { $0.count <= 72 })
         XCTAssertThrowsError(try AnchorText.pages(String(repeating: "字", count: 8001)))
     }
+    func testAnchorPreferencesRetainLegacyTextAcrossRecreation() throws {
+        let suite = "io.github.ninkigal-dxh.Alter.test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let legacy = "第一段 👩🏽‍🔬\n\n第二段，仍在这里。"
+        defaults.set(legacy, forKey: "anchorText")
+        let first = AnchorPreferences(defaults: defaults)
+        XCTAssertEqual(first.loadText(), legacy)
+        let edited = legacy + "\n这是我的新文字。"
+        try first.saveText(edited)
+        let recreated = AnchorPreferences(defaults: UserDefaults(suiteName: suite)!)
+        XCTAssertEqual(recreated.loadText(), edited)
+        XCTAssertEqual(AnchorPreferences.domain, "io.github.ninkigal-dxh.Alter")
+    }
+    func testAnchorInvalidEditPreservesSavedTextAndEmptyTextPersists() throws {
+        let suite = "io.github.ninkigal-dxh.Alter.test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AnchorPreferences(defaults: defaults)
+        try store.saveText("保留这段原文")
+        XCTAssertThrowsError(try store.saveText(String(repeating: "字", count: 8001)))
+        XCTAssertEqual(store.loadText(), "保留这段原文")
+        try store.saveText("")
+        XCTAssertEqual(AnchorPreferences(defaults: UserDefaults(suiteName: suite)!).loadText(), "")
+    }
 }
