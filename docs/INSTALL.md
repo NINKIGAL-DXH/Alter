@@ -1,8 +1,8 @@
-# Alter 0.2.0 安装说明
+# Alter 0.3.0 安装说明
 
 从 [GitHub Releases](https://github.com/NINKIGAL-DXH/Alter/releases) 下载 DMG 与对应 `.sha256`：Apple Silicon 用 `arm64`，Intel 用 `x86_64`。最低 macOS 14；原生 Liquid Glass 需要 macOS 26。
 
-在下载目录运行 `shasum -a 256 -c Alter-0.2.0-arm64.dmg.sha256`（Intel 替换架构名）。打开 DMG，将 Alter.app 拖入应用程序。当前是 ad-hoc 签名，未获得 Developer ID 签名和公证；核实来源后按 macOS“隐私与安全性”的正规流程处理阻止提示，不要关闭 Gatekeeper 或移除隔离标记。
+在下载目录运行 `shasum -a 256 -c Alter-0.3.0-arm64.dmg.sha256`（Intel 替换架构名）。打开 DMG，将 Alter.app 拖入应用程序。当前是 ad-hoc 签名，未获得 Developer ID 签名和公证；核实来源后按 macOS“隐私与安全性”的正规流程处理阻止提示，不要关闭 Gatekeeper 或移除隔离标记。
 
 首次启动不扫描或修改文件。空间透镜可选择目录，也可输入 `~/Documents`、`/Volumes` 等路径。系统访问控制仍生效，无法访问的内容不保证计入总量；可由你在隐私设置中管理目录权限。分析系统目录不会赋予删除权限。
 
