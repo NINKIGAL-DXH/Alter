@@ -379,4 +379,55 @@ final class SafetyTests: XCTestCase {
         XCTAssertEqual(LensLayout.pack(snapshot.entries,totalSize:snapshot.totalSize).reduce(Int64(0)) { $0 + $1.bytes },snapshot.totalSize)
     }
 
+    func testDuplicateScanRejectsReplacedSymlink() throws {
+        let a = try file("Downloads/a.bin",count:8192)
+        let b = try file("Downloads/b.bin",count:8192)
+        let index = try MoleReader(resources:fullResources).index(home.appendingPathComponent("Downloads").path,cancellation:CancellationFlag())
+        // Only replace a fixture we created, never a user file.
+        try FileManager.default.removeItem(at:b)
+        try FileManager.default.createSymbolicLink(at:b,withDestinationURL:a)
+        let result = try DuplicateFinder.find(in:index,cancellation:CancellationFlag())
+        XCTAssertTrue(result.groups.isEmpty); XCTAssertEqual(result.skipped,1)
+        XCTAssertEqual(try Data(contentsOf:a).count,8192)
+    }
+
+    func testSparkleVersionElementsSurviveEnclosureAndFilterPlatform() throws {
+        let app=ManagedApp(path:"/Applications/Fixture.app",name:"Fixture",bundleID:"test.fixture",version:"1.0",feed:nil,appStore:false,buildVersion:"100")
+        let feed="""
+        <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
+        <item><sparkle:version>200</sparkle:version><sparkle:shortVersionString>2.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion><enclosure url="https://example.com/mac.zip" /></item>
+        <item><enclosure sparkle:version="900" sparkle:shortVersionString="9.0" sparkle:os="windows" /></item>
+        <item><sparkle:channel>beta</sparkle:channel><enclosure sparkle:version="500" sparkle:shortVersionString="5.0" /></item>
+        <item><sparkle:minimumSystemVersion>99.0</sparkle:minimumSystemVersion><enclosure sparkle:version="990" sparkle:shortVersionString="9.9" /></item>
+        </channel></rss>
+        """
+        let result=try AppUpdates.parse(Data(feed.utf8),app:app,systemVersion:"26.0")
+        XCTAssertEqual(result.version,"2.0（构建 200）")
+        XCTAssertTrue(result.detail.contains("更新版本"))
+    }
+    func testSparkleRejectsEntityDeclarationsBeforeParsing() throws {
+        let app=ManagedApp(path:"/Applications/Fixture.app",name:"Fixture",bundleID:"test.fixture",version:"1.0",feed:nil,appStore:false)
+        let xml="<?xml version=\"1.0\" encoding=\"UTF-16\"?><!DOCTYPE rss [<!ENTITY x \"value\">]><rss>&x;</rss>"
+        XCTAssertThrowsError(try AppUpdates.parse(xml.data(using:.utf16)!,app:app,systemVersion:"26.0"))
+        XCTAssertThrowsError(try AppUpdates.parse(Data(repeating:32,count:2_097_153),app:app,systemVersion:"26.0"))
+    }
+    func testInstalledCaskReceiptRejectsOldUninstallHooks() throws {
+        let update=BrewUpdate(token:"example",installed:"1.0",available:"2.0")
+        var cask: [String:Any] = ["token":"example","tap":"homebrew/cask","version":"1.0","artifacts":[["app":["Example.app"]]]]
+        let paths=["/Applications/Example.app"]
+        XCTAssertFalse(try BrewUpdates.validateInstalledReceipt(JSONSerialization.data(withJSONObject:cask),update:update,expectedPaths:paths).isEmpty)
+        cask["artifacts"]=[["app":["Example.app"]],["uninstall":["script":"old-hook.sh"]]]
+        XCTAssertThrowsError(try BrewUpdates.validateInstalledReceipt(JSONSerialization.data(withJSONObject:cask),update:update,expectedPaths:paths))
+    }
+
+    func testProtectionHonorsVolumeCaseSensitivity() throws {
+        let protected=try file("Downloads/Important.txt")
+        let store=ProtectionStore(home:home.path); try store.save([protected.path])
+        let alternate=protected.deletingLastPathComponent().appendingPathComponent("important.TXT")
+        let sensitive=(try protected.resourceValues(forKeys:[.volumeSupportsCaseSensitiveNamesKey])).volumeSupportsCaseSensitiveNames == true
+        if sensitive { try store.requireUnprotected(alternate.path) }
+        else { XCTAssertThrowsError(try store.requireUnprotected(alternate.path)) }
+        XCTAssertThrowsError(try store.requireUnprotected(home.path + "/Downloads/./Important.txt"))
+    }
+
 }

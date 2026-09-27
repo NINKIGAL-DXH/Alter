@@ -50,7 +50,7 @@ The development verification did not execute real maintenance or authenticate su
 
 ## Verification
 
-The 33 Swift test methods cover pinned Mole discovery/guards, real status JSON, running-cache protection, temporary app/artifact/installers, physical path constraints, cancellation/output limits, tree changes, Trash restore/conflicts, history safety and circle layout. Mutation fixtures are UUID directories created by the tests. Some upstream diagnostics and status read actual system metadata; no test invokes actual system maintenance or deletes user files.
+The 38 Swift test methods cover pinned Mole discovery/guards, real status JSON, running-cache protection, temporary app/artifact/installers, physical path constraints, cancellation/output limits, tree changes, Trash restore/conflicts, history safety and circle layout. Mutation fixtures are UUID directories created by the tests. Some upstream diagnostics and status read actual system metadata; no test invokes actual system maintenance or deletes user files.
 
 Local CLT runs use `scripts/test-local.py` over those same methods. GitHub runs XCTest and packages/validates both architectures. App resource smoke checks validate all 23 image crops, the icon, full shell source hashes, both Go workers and linked dependency license metadata.
 
@@ -80,3 +80,5 @@ updater. No real app updates or startup mutations are run by the test suite.
 Security results state what was actually read or verified. Signature validity
 is not a malware assessment or a notarization verdict. The security page never
 disables SIP, Gatekeeper, encryption or firewall settings.
+
+Update plans also validate the installed cask JSON receipt: old uninstall hooks, scripts, missing JSON receipts and changed app destinations refuse automatic updating. Both old and new recipe digests are rechecked. Sparkle parsing supports build versions and element-form appcasts, filters platform/channel/OS constraints, and rejects XML entities before parsing (including UTF-16/32). Duplicate hashing rejects dataless files before opening them. Protection matching follows volume case sensitivity and normalizes dot segments.

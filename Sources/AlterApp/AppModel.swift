@@ -128,7 +128,7 @@ enum AppPage: String, CaseIterable, Identifiable {
             totalCapacity = Int64(values.volumeTotalCapacity ?? 0); freeCapacity = Int64(values.volumeAvailableCapacity ?? 0)
         }
     }
-    func cancel() { cancellation.cancel(); activity = "正在停止，请稍候…" }
+    func cancel() { cancellation.cancel(); worker?.cancel(); activity = "正在停止，请稍候…" }
     func begin(_ message: String) -> CancellationFlag? {
         guard !busy, geteuid() != 0 else { if geteuid() == 0 { errorMessage = "Alter 拒绝以 root 身份运行。" }; return nil }
         busy = true; activity = message; cancellation = CancellationFlag(); return cancellation

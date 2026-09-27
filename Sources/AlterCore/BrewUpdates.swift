@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import CryptoKit
 
 public struct BrewUpdate: Identifiable, Sendable {
     public var id: String { token }
@@ -8,6 +9,7 @@ public struct BrewUpdate: Identifiable, Sendable {
 public struct BrewUpdatePlan: Sendable {
     public let update: BrewUpdate, appPaths: [String], created: Date
     public let receiptHash: String
+    public let installedReceiptHash: String
 }
 public enum BrewUpdates {
     static var executable: String? { ["/opt/homebrew/bin/brew","/usr/local/bin/brew"].first { FileManager.default.isExecutableFile(atPath:$0) } }
@@ -32,7 +34,9 @@ public enum BrewUpdates {
     public static func preview(_ update: BrewUpdate, cancellation: CancellationFlag) throws -> BrewUpdatePlan {
         guard valid(update.token) else { throw AlterError.refused("无效 Homebrew 标识。") }
         let data = try run(["info","--cask","--json=v2",update.token],cancellation:cancellation)
-        return try parsePreview(update, data:data)
+        let current = try parsePreview(update, data:data)
+        let installed = try installedReceipt(update, expectedPaths:current.appPaths)
+        return BrewUpdatePlan(update:current.update,appPaths:current.appPaths,created:current.created,receiptHash:current.receiptHash,installedReceiptHash:installed)
     }
     static func parsePreview(_ update: BrewUpdate, data: Data) throws -> BrewUpdatePlan {
         guard valid(update.token) else { throw AlterError.refused("无效 Homebrew 标识。") }
@@ -40,7 +44,14 @@ public enum BrewUpdates {
               let cask = casks.first, cask["token"] as? String == update.token, cask["tap"] as? String == "homebrew/cask",
               cask["version"] as? String == update.available, cask["installed"] as? String == update.installed,
               cask["container"] == nil || cask["container"] is NSNull,
-              let artifacts = cask["artifacts"] as? [[String:Any]] else { throw AlterError.refused("cask 来源或版本变化，请重新检查。") }
+              cask["artifacts"] is [[String:Any]] else { throw AlterError.refused("cask 来源或版本变化，请重新检查。") }
+        let paths = try artifactPaths(cask)
+        // Canonical sorted JSON avoids false invalidation from key order differences.
+        let receipt = try JSONSerialization.data(withJSONObject:cask,options:[.sortedKeys])
+        return BrewUpdatePlan(update:update,appPaths:paths,created:Date(),receiptHash:digest(receipt),installedReceiptHash:"")
+    }
+    static func artifactPaths(_ cask: [String:Any]) throws -> [String] {
+        guard let artifacts = cask["artifacts"] as? [[String:Any]], cask["container"] == nil || cask["container"] is NSNull else { throw AlterError.refused("无法核实 cask 的安装动作。") }
         if let deps = cask["depends_on"] as? [String:Any], deps.keys.contains(where: { $0 != "macos" && $0 != "arch" }) { throw AlterError.refused("此 cask 会联动安装依赖，请使用所属更新器。") }
         var paths: [String] = []
         for artifact in artifacts {
@@ -49,16 +60,45 @@ public enum BrewUpdates {
             else if artifact["app"] != nil { throw AlterError.refused("此 cask 使用自定义目标，需要应用自身更新器。") }
         }
         guard !paths.isEmpty else { throw AlterError.refused("未识别到应用包。") }
-        // Canonical sorted JSON avoids false invalidation from key order differences.
-        let receipt = try JSONSerialization.data(withJSONObject:cask,options:[.sortedKeys])
-        return BrewUpdatePlan(update:update,appPaths:paths,created:Date(),receiptHash:receipt.base64EncodedString())
+        return paths
+    }
+    private static func digest(_ data: Data) -> String { SHA256.hash(data:data).map { String(format:"%02x",$0) }.joined() }
+    static func validateInstalledReceipt(_ data: Data, update: BrewUpdate, expectedPaths: [String]) throws -> String {
+        guard data.count <= 1_048_576, let cask = try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              cask["token"] as? String == update.token, cask["version"] as? String == update.installed,
+              cask["tap"] as? String == "homebrew/cask", try artifactPaths(cask) == expectedPaths else { throw AlterError.refused("旧版 cask 安装记录不能证明为相同的纯应用包更新，请使用应用自身更新器。") }
+        return digest(try JSONSerialization.data(withJSONObject:cask,options:[.sortedKeys]))
+    }
+    private static func installedReceipt(_ update: BrewUpdate, expectedPaths: [String]) throws -> String {
+        guard !update.installed.contains("/"), !update.installed.contains(".."), update.installed.utf8.count < 256, let executable else { throw AlterError.refused("已安装版本记录无效。") }
+        let prefix = executable.hasPrefix("/opt/homebrew/") ? "/opt/homebrew" : "/usr/local"
+        let folder = URL(fileURLWithPath:prefix + "/Caskroom/" + update.token + "/.metadata/" + update.installed)
+        let parent = try FileSafety.openDirectory(folder.path); defer { close(parent) }
+        guard let walker = FileManager.default.enumerator(at:folder,includingPropertiesForKeys:[.isSymbolicLinkKey]) else { throw AlterError.refused("无法读取旧版 cask 安装记录，请使用应用自身更新器。") }
+        var checked = 0
+        for case let file as URL in walker {
+            checked += 1
+            guard checked <= 500 else { throw AlterError.refused("安装记录超出预算，请使用应用自身更新器。") }
+            let relative = file.path.dropFirst(folder.path.count).split(separator:"/")
+            if relative.count > 3 || (try? file.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink) == true { walker.skipDescendants(); continue }
+            guard file.lastPathComponent == update.token + ".json", relative.count == 3, relative[1] == "Casks" else { continue }
+            let fd = try FileSafety.openDirectory(file.deletingLastPathComponent().path); defer { close(fd) }
+            let inputFD = openat(fd,file.lastPathComponent,O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            guard inputFD >= 0 else { continue }
+            let input = FileHandle(fileDescriptor:inputFD,closeOnDealloc:true)
+            var st = stat(); guard fstat(inputFD,&st) == 0, FileSafety.regular(st), st.st_size <= 1_048_576 else { continue }
+            let data = try input.read(upToCount:1_048_577) ?? Data()
+            return try validateInstalledReceipt(data,update:update,expectedPaths:expectedPaths)
+        }
+        throw AlterError.refused("旧版仅有 Ruby 配方或缺少可验证的 JSON 安装记录，请使用应用自身更新器；不会静默执行旧版卸载脚本。")
     }
     public static func execute(_ plan: BrewUpdatePlan, cancellation: CancellationFlag) throws -> String {
         guard Date().timeIntervalSince(plan.created) >= 0, Date().timeIntervalSince(plan.created) < 300 else { throw AlterError.refused("更新预览已过期。") }
         let fresh = try preview(plan.update,cancellation:cancellation)
-        guard fresh.receiptHash == plan.receiptHash else { throw AlterError.refused("Homebrew 安装信息变化，请重新确认。") }
+        guard !plan.installedReceiptHash.isEmpty, fresh.receiptHash == plan.receiptHash, fresh.installedReceiptHash == plan.installedReceiptHash else { throw AlterError.refused("Homebrew 安装信息变化，请重新确认。") }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        for path in plan.appPaths { try ProtectionStore(home:home).requireUnprotected(path) }
+        let prefix = executable?.hasPrefix("/opt/homebrew/") == true ? "/opt/homebrew" : "/usr/local"
+        for path in plan.appPaths + [prefix + "/Caskroom/" + plan.update.token, home + "/Library/Caches/Homebrew"] { try ProtectionStore(home:home).requireUnprotected(path) }
         let result = try run(["upgrade","--cask",plan.update.token],mutation:true,cancellation:cancellation)
         let verification = try run(["info","--cask","--json=v2",plan.update.token],cancellation:cancellation)
         guard let json = try JSONSerialization.jsonObject(with:verification) as? [String:Any], let rows = json["casks"] as? [[String:Any]],

@@ -68,13 +68,16 @@ explicitly described as such.
 ## Validation record and remaining release work
 
 - Native arm64 release compilation passed.
-- 33 local safety fixtures passed, including cached nested navigation, explicit
+- 38 local safety fixtures passed, including cached nested navigation, explicit
   refresh, disk pagination, duplicate retained-copy changes, cask artifact
   validation, system-domain startup refusal, and exclusions.
 - Native UI navigation confirmed first scan and cached drill-down using a
-  disposable fixture. Screenshot capture currently yields a Stage Manager
-  thumbnail, so full-window visual fidelity remains unverified.
-- Pending: GitHub arm64/Intel CI, final DMG builds and release verification.
+  disposable fixture. Full-window visual fidelity remains unverified: initial captures yielded a
+  Stage Manager thumbnail; later ScreenCaptureKit captures returned error -3811
+  even after the user confirmed the desktop was unlocked.
+- GitHub arm64/Intel CI passed for c9f6c96 (33 tests), run 36212581534.
+  The subsequent update/parser/protection guards passed 38 local tests; their
+  final GitHub builds and release verification are tracked in the Release.
 - No real cleanup, app upgrade, startup change, or privileged maintenance has
   been executed on the development computer to test these features.
 
@@ -89,3 +92,17 @@ explicitly described as such.
 - [Homebrew commands](https://docs.brew.sh/Manpage) and
   [Sparkle appcasts](https://sparkle-project.org/documentation/publishing/):
   update source formats and owner-managed installation.
+
+## Follow-up verification
+
+A synthetic fixture with 6,000 files in 30 directories indexed in 0.186 s; 300
+cached navigation/layout queries took 0.234 s total. The benchmark process
+reported peak RSS 16.2 MiB. This warm fixture is not a whole-disk performance
+guarantee and does not measure the GUI memory footprint.
+
+Installed Homebrew JSON receipts are checked along with the current recipe,
+including old uninstall hooks and app destinations. Both digests are rechecked
+before an upgrade. Sparkle appcasts support element versions, build versions,
+platform/channel/OS filtering and reject entity declarations before parsing.
+Protection paths respect volume case sensitivity; cloud placeholders are
+rejected before duplicate hashing opens a file.

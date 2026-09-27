@@ -37,9 +37,20 @@ public struct ProtectionStore: Sendable {
         let written = data.withUnsafeBytes { Darwin.write(fd,$0.baseAddress,data.count) }
         guard written == data.count, fsync(fd) == 0, renameat(parent,name,parent,"protected.json") == 0 else { throw AlterError.refused("保护名单保存失败。") }
     }
+    private func comparablePath(_ path: String) -> String {
+        var volumeProbe = URL(fileURLWithPath:path)
+        while !FileManager.default.fileExists(atPath:volumeProbe.path), volumeProbe.path != "/" { volumeProbe=volumeProbe.deletingLastPathComponent() }
+        let caseSensitive = (try? volumeProbe.resourceValues(forKeys:[.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames) == true
+        let normalized = URL(fileURLWithPath:path).standardizedFileURL.path.precomposedStringWithCanonicalMapping
+        return caseSensitive ? normalized : normalized.folding(options:.caseInsensitive,locale:Locale(identifier:"en_US_POSIX"))
+    }
     public func requireUnprotected(_ path: String) throws {
-        for entry in try load() where path == entry || path.hasPrefix(entry == "/" ? "/" : entry + "/") || entry.hasPrefix(path + "/") {
-            throw AlterError.refused("保护名单保留此项目：" + entry)
+        let chosen = comparablePath(path)
+        for entry in try load() {
+            let protected = comparablePath(entry)
+            if chosen == protected || chosen.hasPrefix(protected == "/" ? "/" : protected + "/") || protected.hasPrefix(chosen + "/") {
+                throw AlterError.refused("保护名单保留此项目：" + entry)
+            }
         }
     }
 }

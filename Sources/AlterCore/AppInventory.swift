@@ -4,6 +4,10 @@ public struct ManagedApp: Identifiable, Sendable {
     public var id: String { path }
     public let path: String, name: String, bundleID: String, version: String
     public let feed: URL?, appStore: Bool
+    public let buildVersion: String?
+    public init(path: String, name: String, bundleID: String, version: String, feed: URL?, appStore: Bool, buildVersion: String? = nil) {
+        self.path=path; self.name=name; self.bundleID=bundleID; self.version=version; self.feed=feed; self.appStore=appStore; self.buildVersion=buildVersion
+    }
 }
 public enum AppInventory {
     public static func read(home: String) -> [ManagedApp] {
@@ -13,7 +17,7 @@ public enum AppInventory {
             for url in paths.prefix(2000) where url.pathExtension == "app" {
                 guard let info = try? readBoundedPlist(url.appendingPathComponent("Contents/Info.plist")), let id = info["CFBundleIdentifier"] as? String else { continue }
                 let feed = (info["SUFeedURL"] as? String).flatMap(URL.init(string:))
-                apps.append(ManagedApp(path:url.path,name:url.deletingPathExtension().lastPathComponent,bundleID:id,version:info["CFBundleShortVersionString"] as? String ?? "未知",feed:feed?.scheme == "https" ? feed : nil,appStore:FileManager.default.fileExists(atPath:url.appendingPathComponent("Contents/_MASReceipt/receipt").path)))
+                apps.append(ManagedApp(path:url.path,name:url.deletingPathExtension().lastPathComponent,bundleID:id,version:info["CFBundleShortVersionString"] as? String ?? "未知",feed:feed?.scheme == "https" ? feed : nil,appStore:FileManager.default.fileExists(atPath:url.appendingPathComponent("Contents/_MASReceipt/receipt").path),buildVersion:info["CFBundleVersion"] as? String))
             }
         }
         return apps.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -45,20 +49,42 @@ private final class SecureFeedSession: NSObject, URLSessionTaskDelegate, @unchec
     }
 }
 private final class FeedParser: NSObject, XMLParserDelegate {
-    var versions: [(String,String)] = [], version = "", minimum = "", channel = "", inItem = false, field = ""
+    struct Version { let short: String, build: String, minimum: String, maximum: String }
+    var versions: [Version] = []
+    var short="", build="", minimum="", maximum="", channel="", field="", inItem=false, macArchive=false, deltaDepth=0
     func parser(_ parser:XMLParser,didStartElement elementName:String,namespaceURI:String?,qualifiedName:String?,attributes:[String:String]) {
-        field = elementName
-        if elementName == "item" { version=""; minimum=""; channel=""; inItem=true }
-        if inItem, elementName == "enclosure" { version = attributes["sparkle:shortVersionString"] ?? "" }
+        field=elementName
+        if elementName == "item" { short=""; build=""; minimum=""; maximum=""; channel=""; macArchive=false; deltaDepth=0; inItem=true }
+        if elementName == "sparkle:deltas" { deltaDepth += 1 }
+        if inItem, elementName == "enclosure", deltaDepth == 0, attributes["sparkle:deltaFrom"] == nil {
+            let platform=attributes["sparkle:os"] ?? "macos"
+            guard platform == "macos" || platform == "macosx" else { return }
+            macArchive=true
+            if let value=attributes["sparkle:shortVersionString"], !value.isEmpty { short=value }
+            if let value=attributes["sparkle:version"], !value.isEmpty { build=value }
+        }
     }
     func parser(_ parser:XMLParser,foundCharacters string:String) {
-        guard inItem else { return }
-        if field == "sparkle:shortVersionString" { version += string }
-        if field == "sparkle:minimumSystemVersion" { minimum += string }
-        if field == "sparkle:channel" { channel += string }
+        guard inItem, deltaDepth == 0 else { return }
+        switch field {
+        case "sparkle:shortVersionString": short += string
+        case "sparkle:version": build += string
+        case "sparkle:minimumSystemVersion": minimum += string
+        case "sparkle:maximumSystemVersion": maximum += string
+        case "sparkle:channel": channel += string
+        default: break
+        }
+        if [short,build,minimum,maximum,channel].contains(where: { $0.utf8.count > 256 }) { parser.abortParsing() }
     }
     func parser(_ parser:XMLParser,didEndElement elementName:String,namespaceURI:String?,qualifiedName:String?) {
-        if elementName == "item" { if !version.isEmpty && channel.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { versions.append((version.trimmingCharacters(in:.whitespacesAndNewlines),minimum.trimmingCharacters(in:.whitespacesAndNewlines))) }; inItem=false }
+        if elementName == "sparkle:deltas" { deltaDepth=max(0,deltaDepth-1) }
+        if elementName == "item" {
+            let clean: (String)->String = { $0.trimmingCharacters(in:.whitespacesAndNewlines) }
+            if macArchive && clean(channel).isEmpty && (!clean(short).isEmpty || !clean(build).isEmpty) {
+                versions.append(Version(short:clean(short),build:clean(build),minimum:clean(minimum),maximum:clean(maximum)))
+            }
+            if versions.count > 2000 { parser.abortParsing() }; inItem=false
+        }
         field=""
     }
 }
@@ -71,16 +97,32 @@ public enum AppUpdates {
         guard let http = response as? HTTPURLResponse, http.statusCode == 200, response.url?.scheme == "https", response.expectedContentLength <= 2_097_152 else { throw AlterError.refused("更新订阅不可用或超过 2 MB 预算。") }
         var data = Data()
         for try await byte in bytes { guard data.count < 2_097_152 else { throw AlterError.refused("更新订阅超过预算。") }; data.append(byte) }
-        let markup = String(decoding:data,as:UTF8.self)
-        guard !markup.contains("<!DOCTYPE"), !markup.contains("<!ENTITY") else { throw AlterError.refused("更新订阅包含不支持的实体声明。") }
-        let delegate = FeedParser(), parser = XMLParser(data:data); parser.shouldResolveExternalEntities=false; parser.delegate=delegate
-        guard parser.parse() else { throw AlterError.refused("无法解析更新订阅。") }
-        let os = ProcessInfo.processInfo.operatingSystemVersion, currentOS = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
-        let versions = delegate.versions.filter { $0.1.isEmpty || currentOS.compare($0.1,options:.numeric) != .orderedAscending }.map(\.0)
-        guard let latest = versions.sorted(by: { $0.compare($1,options:.numeric) == .orderedDescending }).first else { throw AlterError.refused("订阅未提供当前系统可用的稳定版本。") }
-        let newer = latest.compare(app.version,options:.numeric) == .orderedDescending
-        return AppUpdate(app:app,version:latest,detail:newer ? "订阅提供更新版本。交由应用自身更新器安装，以保留其签名、公证与迁移流程。" : "当前版本不低于订阅中可用的稳定版本。")
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        return try parse(data,app:app,systemVersion:"\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)")
     }
+    static func parse(_ data: Data, app: ManagedApp, systemVersion: String) throws -> AppUpdate {
+        guard data.count <= 2_097_152 else { throw AlterError.refused("更新订阅超过预算。") }
+        // Reject declarations before the XML parser, including UTF-16/32 encodings.
+        let encodings: [String.Encoding] = [.utf16LittleEndian,.utf16BigEndian,.utf32LittleEndian,.utf32BigEndian]
+        guard !([String(decoding:data,as:UTF8.self)] + encodings.compactMap({ String(data:data,encoding:$0) })).contains(where: { $0.contains("<!DOCTYPE") || $0.contains("<!ENTITY") }) else { throw AlterError.refused("更新订阅包含不支持的实体声明。") }
+        let delegate=FeedParser(), parser=XMLParser(data:data); parser.shouldResolveExternalEntities=false; parser.delegate=delegate
+        guard parser.parse() else { throw AlterError.refused("无法解析更新订阅。") }
+        let versions=delegate.versions.filter {
+            ($0.minimum.isEmpty || systemVersion.compare($0.minimum,options:.numeric) != .orderedAscending) &&
+            ($0.maximum.isEmpty || systemVersion.compare($0.maximum,options:.numeric) != .orderedDescending)
+        }
+        let useBuild = app.buildVersion != nil && versions.contains { !$0.build.isEmpty }
+        let comparable=versions.filter { useBuild ? !$0.build.isEmpty : !$0.short.isEmpty }
+        guard let latest=comparable.sorted(by: {
+            let a = useBuild ? $0.build : $0.short, b = useBuild ? $1.build : $1.short
+            return a.compare(b,options:.numeric) == .orderedDescending
+        }).first else { throw AlterError.refused("订阅未提供当前系统可比较的版本；请使用应用自身更新器。") }
+        let available = useBuild ? latest.build : latest.short
+        let installed = useBuild ? app.buildVersion! : app.version
+        let newer=available.compare(installed,options:.numeric) == .orderedDescending
+        return AppUpdate(app:app,version:latest.short.isEmpty ? "构建 " + available : latest.short + (useBuild ? "（构建 " + latest.build + "）" : ""),detail:newer ? "订阅提供更新版本。交由应用自身更新器安装，以保留其签名、公证与迁移流程。" : "当前版本不低于订阅中适用于本系统的版本。")
+    }
+
 }
 
 func readBoundedPlist(_ url: URL) throws -> [String:Any] {

@@ -32,6 +32,9 @@ public enum DuplicateFinder {
     /// Metadata is checked before and after hashing; no symlink/hardlink aliases.
     static func digest(_ file: IndexedFile, cancellation: CancellationFlag, deadline: Date) throws -> String {
         let parent = try FileSafety.openDirectory(URL(fileURLWithPath:file.path).deletingLastPathComponent().path); defer { close(parent) }
+        var metadata = stat()
+        guard fstatat(parent,file.name,&metadata,AT_SYMLINK_NOFOLLOW) == 0, FileSafety.regular(metadata),
+              metadata.st_flags & UInt32(SF_DATALESS) == 0 else { throw AlterError.refused("跳过云端占位文件或非普通文件。") }
         let fd = openat(parent,file.name,O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else { throw AlterError.refused("文件不可读。") }; defer { close(fd) }
         var before = stat()
