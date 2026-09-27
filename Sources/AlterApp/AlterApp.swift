@@ -39,14 +39,19 @@ import AlterCore
         }.defaultSize(width: 1220, height: 860)
             .windowStyle(.hiddenTitleBar)
             .commands {
-                CommandGroup(replacing: .appInfo) { Button("关于 Alter") { model.page = .settings } }
-                CommandGroup(after: .appInfo) { Button("停止当前扫描") { model.cancel() }.keyboardShortcut(".", modifiers: .command).disabled(!model.busy) }
+                CommandGroup(replacing: .appInfo) { Button("关于 Alter") { model.page = .settings }.disabled(model.toolsFrozen) }
+                CommandGroup(after: .appInfo) {
+                    Button(model.toolsFrozen ? "退出 Anchor" : "进入 Anchor") {
+                        if model.toolsFrozen { model.leaveAnchor() } else { model.enterAnchor() }
+                    }.keyboardShortcut("a", modifiers: [.command, .shift]).disabled(model.busy)
+                    Button("退出 Anchor 屏保") { model.leaveAnchor() }.keyboardShortcut(.escape, modifiers: []).disabled(!model.toolsFrozen)
+                    Button("停止当前扫描") { model.cancel() }.keyboardShortcut(".", modifiers: .command).disabled(model.toolsFrozen || !model.busy) }
             }
         MenuBarExtra {
             AlterMenuView().environmentObject(model)
         } label: {
             Image(systemName: "circle.hexagongrid.fill")
-            if let status = model.systemStatus { Text(String(format:"%.0f%%", status.cpu)).monospacedDigit() }
+            if !model.toolsFrozen, let status = model.systemStatus { Text(String(format:"%.0f%%", status.cpu)).monospacedDigit() }
         }.menuBarExtraStyle(.window)
 
     }

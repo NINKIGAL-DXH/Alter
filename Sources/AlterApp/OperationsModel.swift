@@ -5,7 +5,7 @@ import AlterCore
 extension AppModel {
     var operations: MoleOperations { MoleOperations(resources: Assets.root) }
     func previewLensItem(_ entry: DiskEntry) {
-        guard !busy else { return }
+        guard !toolsFrozen, !busy else { return }
         duplicateReviewGroups = []
         candidateFeature = .clean; uninstallTarget = nil; discoveryRoot = nil
         candidates = [MoleCandidate(category: "file", path: entry.path, bytes: entry.size, note: "你在空间透镜中选择的项目")]
@@ -13,7 +13,7 @@ extension AppModel {
         previewCandidates()
     }
     func choosePurge() {
-        guard !busy else { return }
+        guard !toolsFrozen, !busy else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.message = "选择项目根目录。Mole 会识别依赖与构建产物，源代码不列入整理项目。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -134,6 +134,7 @@ extension AppModel {
         }
     }
     func authorizeOptimizeInTerminal() {
+        guard !toolsFrozen, !busy else { return }
         guard let preview = optimizePreview, Date().timeIntervalSince(preview.created) < 300 else { errorMessage = "预览已过期。"; return }
         do {
             try operations.verify()
@@ -145,6 +146,9 @@ extension AppModel {
             let body = "#!/bin/bash\nset -euo pipefail\nprintf '%s\\n' " + quote("Alter · 单项管理员维护\n" + preview.task.title + "\n" + preview.task.detail + "\n此任务可能修改系统设置或数据库，不能一键撤销。授权只用于当前维护项。") + "\n/usr/bin/sudo -v\nexec " + quote(executable) + " --authorized-maintenance " + quote(preview.task.id) + " " + String(Int(preview.created.timeIntervalSince1970) + 300) + "\n"
             try body.write(to: launcher, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: launcher.path)
+            // Bound the handoff window: 300s authorization expiry + 600s worker
+            // budget + termination grace. Anchor cannot claim quiescence before then.
+            maintenanceHandoffUntil = preview.created.timeIntervalSince1970 + 930
             NSWorkspace.shared.open(launcher)
             showOptimize = false; activity = "已交给终端进行单项授权；结果显示在终端中，不记为已完成。"
         } catch { errorMessage = error.localizedDescription }

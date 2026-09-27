@@ -5,12 +5,19 @@ private let wine = Color(red: 0.64, green: 0.23, blue: 0.35)
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
+    var body: some View {
+        if model.toolsFrozen { AnchorView() }
+        else { ToolsContentView() }
+    }
+}
+struct ToolsContentView: View {
+    @EnvironmentObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 12) { BrandImage(size: 44); VStack(alignment: .leading, spacing: 0) { Text("Alter").font(.system(size: 31, weight: .medium, design: .serif)); Text("SPACE TO BEGIN").font(.system(size: 8, weight: .medium)).tracking(2.5).foregroundStyle(.secondary) } }.padding(.horizontal, 16).padding(.top, 22)
-                List(AppPage.allCases, selection: $model.page) { page in Label(page.rawValue, systemImage: page.icon).tag(page).padding(.vertical, 7) }.listStyle(.sidebar).scrollContentBackground(.hidden)
+                List(AppPage.allCases.filter { $0 != .anchor }, selection: $model.page) { page in Label(page.rawValue, systemImage: page.icon).tag(page).padding(.vertical, 7) }.listStyle(.sidebar).scrollContentBackground(.hidden)
                 if model.companionVisible {
                     Button { model.page = .companion } label: {
                         VStack(alignment: .leading, spacing: 10) {
@@ -20,12 +27,15 @@ struct ContentView: View {
                         }
                     }.buttonStyle(.plain).padding(.horizontal, 17)
                 }
+                Button { model.page = .anchor } label: { Label("Anchor · 静静停留", systemImage: "sparkle") }
+                    .buttonStyle(.plain).padding(.horizontal, 17)
                 Label("你的文件，由你决定", systemImage: "checkmark.shield").font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 17).padding(.bottom, 15)
             }.navigationSplitViewColumnWidth(min: 195, ideal: 215, max: 245)
         } detail: {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     switch model.page {
+                    case .anchor: AnchorSetupView()
                     case .files: FileManagementView()
                     case .startup: StartupView()
                     case .security: SecurityView()

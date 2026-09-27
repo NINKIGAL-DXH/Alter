@@ -430,4 +430,27 @@ final class SafetyTests: XCTestCase {
         XCTAssertThrowsError(try store.requireUnprotected(home.path + "/Downloads/./Important.txt"))
     }
 
+    func testAnchorRefusesActiveJobsAndPendingMaintenance() throws {
+        var session = AnchorSession()
+        XCTAssertThrowsError(try session.prepare(busy: true, externalUntil: nil))
+        XCTAssertFalse(session.freezesTools)
+        let now = Date()
+        XCTAssertThrowsError(try session.prepare(busy: false, externalUntil: now.addingTimeInterval(60), now: now))
+        XCTAssertFalse(session.freezesTools)
+        try session.prepare(busy: false, externalUntil: now.addingTimeInterval(-1), now: now)
+        XCTAssertTrue(session.freezesTools)
+        session.activate(); XCTAssertTrue(session.freezesTools)
+        XCTAssertThrowsError(try session.prepare(busy: false, externalUntil: nil))
+        session.leave(); XCTAssertFalse(session.freezesTools)
+        session.activate(); XCTAssertFalse(session.freezesTools)
+    }
+    func testAnchorPaginationPreservesGraphemesAndRefusesOversize() throws {
+        XCTAssertTrue(try AnchorText.pages(" \n ").isEmpty)
+        XCTAssertEqual(try AnchorText.pages("第一段。\n\n第二段。"), ["第一段。", "第二段。"])
+        let text = String(repeating: "👩🏽‍🔬晶", count: 90)
+        let pages = try AnchorText.pages(text)
+        XCTAssertEqual(pages.joined(), text)
+        XCTAssertTrue(pages.allSatisfy { $0.count <= 72 })
+        XCTAssertThrowsError(try AnchorText.pages(String(repeating: "字", count: 8001)))
+    }
 }

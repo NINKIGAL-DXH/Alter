@@ -3,12 +3,21 @@ import AppKit
 import AlterCore
 
 enum AppPage: String, CaseIterable, Identifiable {
-    case overview = "总览", clean = "智能清理", storage = "空间透镜", files = "文件整理", apps = "应用管理", startup = "启动项", purge = "项目产物", installer = "安装包", optimize = "系统维护", status = "系统状态", security = "安全检查", protection = "保护名单", companion = "Alter 陪伴", history = "操作记录", settings = "设置"
+    case anchor = "Anchor", overview = "总览", clean = "智能清理", storage = "空间透镜", files = "文件整理", apps = "应用管理", startup = "启动项", purge = "项目产物", installer = "安装包", optimize = "系统维护", status = "系统状态", security = "安全检查", protection = "保护名单", companion = "Alter 陪伴", history = "操作记录", settings = "设置"
     var id: String { rawValue }
-    var icon: String { switch self { case .files: "doc.on.doc"; case .startup: "power"; case .security: "checkmark.shield"; case .protection: "lock.shield"; case .purge: "shippingbox"; case .installer: "archivebox"; case .optimize: "wrench.and.screwdriver"; case .status: "waveform.path.ecg"; case .overview: "square.grid.2x2"; case .clean: "sparkles"; case .storage: "internaldrive"; case .apps: "square.stack.3d.up"; case .companion: "moon.stars"; case .history: "clock.arrow.circlepath"; case .settings: "slider.horizontal.3" } }
-    var expression: Int { switch self { case .files: 14; case .startup: 7; case .security: 13; case .protection: 16; case .purge: 6; case .installer: 4; case .optimize: 20; case .status: 8; case .overview: 1; case .clean: 4; case .storage: 15; case .apps: 17; case .companion: 2; case .history: 23; case .settings: 18 } }
+    var icon: String { switch self { case .anchor: "sparkle"; case .files: "doc.on.doc"; case .startup: "power"; case .security: "checkmark.shield"; case .protection: "lock.shield"; case .purge: "shippingbox"; case .installer: "archivebox"; case .optimize: "wrench.and.screwdriver"; case .status: "waveform.path.ecg"; case .overview: "square.grid.2x2"; case .clean: "sparkles"; case .storage: "internaldrive"; case .apps: "square.stack.3d.up"; case .companion: "moon.stars"; case .history: "clock.arrow.circlepath"; case .settings: "slider.horizontal.3" } }
+    var expression: Int { switch self { case .anchor: 2; case .files: 14; case .startup: 7; case .security: 13; case .protection: 16; case .purge: 6; case .installer: 4; case .optimize: 20; case .status: 8; case .overview: 1; case .clean: 4; case .storage: 15; case .apps: 17; case .companion: 2; case .history: 23; case .settings: 18 } }
 }
 @MainActor final class AppModel: ObservableObject {
+    @Published var anchorSession = AnchorSession()
+    @Published var anchorPreparingNote: String?
+    @Published var anchorPages: [String] = []
+    @Published var anchorPictureIDs: [Int] = []
+    @AppStorage("anchorText") var anchorText = ""
+    @AppStorage("anchorSlideshow") var anchorSlideshow = true
+    @AppStorage("anchorPicture") var anchorPicture = 2
+    @AppStorage("maintenanceHandoffUntil") var maintenanceHandoffUntil = 0.0
+    var toolsFrozen: Bool { anchorSession.freezesTools }
     @Published var page: AppPage = .overview { didSet { expression = page.expression } }
     @Published var fileCollection: FileCollection = .large
     @Published var managedFiles: [IndexedFile] = []
@@ -76,6 +85,7 @@ enum AppPage: String, CaseIterable, Identifiable {
     private var lensQueryGeneration = UUID()
     private var lensQueryTask: Task<Void,Never>?
     func filterLensEntries() {
+        guard !toolsFrozen else { return }
         guard let index = diskIndex, let snapshot = diskSnapshot else { lensEntries=[]; lensTotalEntries=0; return }
         let query = lensQuery, currentPage = lensPage
         let visible = lensRemainderOnly ? Set(lensBubbles.filter { !$0.remainder }.map(\.id)) : []
@@ -124,18 +134,45 @@ enum AppPage: String, CaseIterable, Identifiable {
     var reclaimBytes: Int64 { installers.filter(\.canTrash).reduce(0) { $0 + $1.bytes } }
     var currentExpression: Expression? { Assets.expressions.first { $0.id == expression } }
     func refreshCapacity() {
+        guard !toolsFrozen else { return }
         if let values = try? URL(fileURLWithPath: home).resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey]) {
             totalCapacity = Int64(values.volumeTotalCapacity ?? 0); freeCapacity = Int64(values.volumeAvailableCapacity ?? 0)
         }
     }
+    func enterAnchor() {
+        do {
+            let pages = try AnchorText.pages(anchorText)
+            let until = maintenanceHandoffUntil > 0 ? Date(timeIntervalSince1970: maintenanceHandoffUntil) : nil
+            try anchorSession.prepare(busy: busy, externalUntil: until)
+            statusLive = false; expressionsPlaying = false
+            lensQueryGeneration = UUID(); lensQueryTask?.cancel()
+            showReviewed = false; showOptimize = false; showConfirmation = false
+            reviewedPlan = nil; optimizePreview = nil; pendingPlan = nil
+            candidateSelection = []; selected = []; fileSelection = []
+            anchorPages = pages
+            anchorPictureIDs = anchorSlideshow ? Assets.expressions.map(\.id) : [anchorPicture]
+            anchorPreparingNote = "正在收起工作界面…"
+            let query = lensQueryTask
+            worker = Task {
+                await query?.value
+                guard !Task.isCancelled, anchorSession.phase == .preparing else { return }
+                errorMessage = nil; anchorPreparingNote = nil; anchorSession.activate()
+            }
+        } catch { anchorPreparingNote = error.localizedDescription }
+    }
+    func leaveAnchor() {
+        worker?.cancel(); anchorSession.leave(); anchorPreparingNote = nil
+        anchorPages = []; anchorPictureIDs = []
+        activity = "已退出 Anchor。自动刷新保持关闭；需要时可手动继续。"
+    }
     func cancel() { cancellation.cancel(); worker?.cancel(); activity = "正在停止，请稍候…" }
     func begin(_ message: String) -> CancellationFlag? {
-        guard !busy, geteuid() != 0 else { if geteuid() == 0 { errorMessage = "Alter 拒绝以 root 身份运行。" }; return nil }
+        guard !toolsFrozen, !busy, geteuid() != 0 else { if geteuid() == 0 { errorMessage = "Alter 拒绝以 root 身份运行。" }; return nil }
         busy = true; activity = message; cancellation = CancellationFlag(); return cancellation
     }
     func scanClean() { discover(.clean) }
     func analyzeFolder() {
-        guard !busy else { return }
+        guard !toolsFrozen, !busy else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
         panel.showsHiddenFiles = true; panel.treatsFilePackagesAsDirectories = true
         panel.message = "选择要查看空间分布的目录。分析只读；系统与隐藏目录也可浏览，访问权限由 macOS 决定。"
@@ -208,7 +245,7 @@ enum AppPage: String, CaseIterable, Identifiable {
         }
     }
     func confirmSelected() {
-        guard !busy else { return }
+        guard !toolsFrozen, !busy else { return }
         do { pendingPlan = try RemovalPlan(entries: selectedEntries); showConfirmation = true; expression = 20 }
         catch { errorMessage = error.localizedDescription }
     }
@@ -239,15 +276,15 @@ enum AppPage: String, CaseIterable, Identifiable {
         }
     }
     func restore(_ record: TrashRecord) {
-        guard !busy else { return }
+        guard !toolsFrozen, !busy else { return }
         let alert = NSAlert(); alert.messageText = "恢复这个安装包？"; alert.informativeText = record.originalPath + "\n不会覆盖同名文件。"
         alert.addButton(withTitle: "恢复"); alert.addButton(withTitle: "取消")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runModal() == .alertFirstButtonReturn, !toolsFrozen, !busy else { return }
         do {
             try TrashService(home: home).restore(record)
             if let i = records.firstIndex(where: { $0.id == record.id }) { records[i].restored = true }
             try history.save(records); indexStale = true; activity = "已恢复到原位置。"; expression = 8
         } catch { errorMessage = error.localizedDescription }
     }
-    func reveal(_ path: String) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+    func reveal(_ path: String) { guard !toolsFrozen else { return }; NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
 }

@@ -28,8 +28,12 @@ extension AppModel {
         }
     }
     func readAppInventory() {
+        guard begin("正在读取应用目录…") != nil else { return }
         let home = self.home
-        Task { managedApps = await Task.detached(priority: .utility) { AppInventory.read(home:home) }.value }
+        worker = Task {
+            managedApps = await Task.detached(priority: .utility) { AppInventory.read(home:home) }.value
+            busy = false
+        }
     }
     func checkAppUpdate(_ app: ManagedApp) {
         guard begin("正在读取应用的更新订阅…") != nil else { return }
@@ -39,6 +43,7 @@ extension AppModel {
         }
     }
     func showAppUpdater(_ app: ManagedApp) {
+        guard !toolsFrozen else { return }
         if app.appStore { NSWorkspace.shared.open(URL(string:"macappstore://showUpdatesPage")!) }
         else { NSWorkspace.shared.open(URL(fileURLWithPath:app.path)) }
     }
@@ -73,6 +78,7 @@ extension AppModel {
         }
     }
     func previewManagedFiles() {
+        guard !toolsFrozen else { return }
         let files = fileCollection == .duplicates ? duplicateGroups.flatMap(\.files) : managedFiles
         if fileCollection == .duplicates, duplicateGroups.contains(where: { $0.files.allSatisfy { fileSelection.contains($0.path) } }) { errorMessage = "重复文件每组至少保留一份，请取消其中一个选择。"; return }
         duplicateReviewGroups = fileCollection == .duplicates ? duplicateGroups : []
@@ -81,21 +87,23 @@ extension AppModel {
         previewCandidates()
     }
     func addProtection(_ path: String? = nil) {
+        guard !toolsFrozen else { return }
         var chosen = path
         if chosen == nil {
             let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.showsHiddenFiles = true; panel.allowsMultipleSelection = false
             guard panel.runModal() == .OK else { return }; chosen = panel.url?.path
         }
-        guard let chosen else { return }
+        guard let chosen, !toolsFrozen else { return }
         do { let store = ProtectionStore(home:home); try store.save(try store.load() + [try FileSafety.physicalReadPath(chosen)]); protectedPaths = try store.load(); activity = "已加入保护名单，预览和执行都会重新检查。" }
         catch { errorMessage = error.localizedDescription }
     }
     func removeProtection(_ path: String) {
+        guard !toolsFrozen else { return }
         let alert = NSAlert(); alert.messageText = "取消保护此路径？"; alert.informativeText = path + "\n取消后可参与清理预览；不会自动清理。"; alert.addButton(withTitle:"取消保护"); alert.addButton(withTitle:"保留保护")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runModal() == .alertFirstButtonReturn, !toolsFrozen else { return }
         do { let store = ProtectionStore(home:home); try store.save(try store.load().filter { $0 != path }); protectedPaths = try store.load() } catch { errorMessage = error.localizedDescription }
     }
-    func readProtection() { do { protectedPaths = try ProtectionStore(home:home).load() } catch { errorMessage = error.localizedDescription } }
+    func readProtection() { guard !toolsFrozen else { return }; do { protectedPaths = try ProtectionStore(home:home).load() } catch { errorMessage = error.localizedDescription } }
     func scanStartup() {
         guard let flag = begin("正在检查登录与后台启动项…") else { return }; let home = self.home
         worker = Task {
@@ -104,7 +112,7 @@ extension AppModel {
         }
     }
     func changeStartup(_ item: StartupItem) {
-        guard !busy, let disabled = item.disabled else { return }
+        guard !toolsFrozen, !busy, let disabled = item.disabled else { return }
         let plan = StartupPlan(item:item,disable:!disabled)
         let alert = NSAlert(); alert.messageText = disabled ? "恢复此用户启动项？" : "停用此用户启动项？"
         alert.informativeText = item.label + "\n" + item.path + "\n" + item.program + "\n仅修改当前用户的 launchd 启动状态，不删除配置、不强制结束进程。已运行的服务可能持续至退出登录。可随时重新启用。"
@@ -120,6 +128,7 @@ extension AppModel {
         worker = Task { securityFindings = await Task.detached(priority:.utility) { SystemAudit.protections(cancellation:flag) }.value; securityDate = Date(); busy = false; activity = "系统防护检查结束；没有修改系统设置。" }
     }
     func auditSignature(_ path: String? = nil) {
+        guard !toolsFrozen else { return }
         var chosen = path
         if chosen == nil { let panel = NSOpenPanel(); panel.allowedContentTypes = [.applicationBundle]; guard panel.runModal() == .OK else { return }; chosen = panel.url?.path }
         guard let chosen, begin("正在校验应用签名…") != nil else { return }

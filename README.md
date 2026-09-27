@@ -57,6 +57,10 @@ Alter 使用真实的 [tw93/Mole](https://github.com/tw93/Mole) 内核，提供�
 
 索引和去重都有磁盘、内存、数量、时间预算；权限不足和达到预算会明确说明。索引仅供展示，不作为删除授权。详细实现、验证状态和参考来源见 [0.3 集成记录](docs/IMPLEMENTATION-0.3.md)。
 
+## Anchor（开发中）
+
+新增图片与水晶玻璃文字的沉浸屏保模式。进入后冻结原有工具，退出后手动继续；可输入自己的文字、轮播现有图片或固定画面，支持全屏与 Esc 退出。详细行为见 [Anchor 模式](docs/ANCHOR.md)。此功能尚未包含在 0.3.0 Release 中。
+
 ## 安装
 
 最低 **macOS 14**，原生 Liquid Glass 需要 **macOS 26**。到 [Releases](https://github.com/NINKIGAL-DXH/Alter/releases) 选择：
