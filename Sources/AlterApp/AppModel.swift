@@ -9,6 +9,7 @@ enum AppPage: String, CaseIterable, Identifiable {
     var expression: Int { switch self { case .anchor: 2; case .files: 14; case .startup: 7; case .security: 13; case .protection: 16; case .purge: 6; case .installer: 4; case .optimize: 20; case .status: 8; case .overview: 1; case .clean: 4; case .storage: 15; case .apps: 17; case .companion: 2; case .history: 23; case .settings: 18 } }
 }
 @MainActor final class AppModel: ObservableObject {
+    @Published private(set) var quitting = false
     @Published var anchorSession = AnchorSession()
     @Published var anchorPreparingNote: String?
     @Published var anchorPages: [String] = []
@@ -17,7 +18,7 @@ enum AppPage: String, CaseIterable, Identifiable {
     @AppStorage("anchorSlideshow") var anchorSlideshow = true
     @AppStorage("anchorPicture") var anchorPicture = 2
     @AppStorage("maintenanceHandoffUntil") var maintenanceHandoffUntil = 0.0
-    var toolsFrozen: Bool { anchorSession.freezesTools }
+    var toolsFrozen: Bool { anchorSession.freezesTools || quitting }
     @Published var page: AppPage = .overview { didSet { expression = page.expression } }
     @Published var fileCollection: FileCollection = .large
     @Published var managedFiles: [IndexedFile] = []
@@ -145,6 +146,7 @@ enum AppPage: String, CaseIterable, Identifiable {
         anchorText = text
     }
     func enterAnchor() {
+        guard !quitting else { return }
         do {
             let pages = try AnchorText.pages(anchorText)
             let until = maintenanceHandoffUntil > 0 ? Date(timeIntervalSince1970: maintenanceHandoffUntil) : nil
@@ -155,7 +157,9 @@ enum AppPage: String, CaseIterable, Identifiable {
             reviewedPlan = nil; optimizePreview = nil; pendingPlan = nil
             candidateSelection = []; selected = []; fileSelection = []
             anchorPages = pages
-            anchorPictureIDs = anchorSlideshow ? Assets.expressions.map(\.id) : [anchorPicture]
+            let pictures = Assets.expressions.map(\.id)
+            let start = pictures.firstIndex(of: anchorPicture) ?? 0
+            anchorPictureIDs = anchorSlideshow ? Array(pictures[start...] + pictures[..<start]) : [pictures[start]]
             anchorPreparingNote = "正在收起工作界面…"
             let query = lensQueryTask
             worker = Task {
@@ -165,7 +169,20 @@ enum AppPage: String, CaseIterable, Identifiable {
             }
         } catch { anchorPreparingNote = error.localizedDescription }
     }
+    func prepareToQuit() async {
+        guard !quitting else { return }
+        quitting = true; statusLive = false; expressionsPlaying = false
+        cancellation.cancel(); worker?.cancel()
+        lensQueryGeneration = UUID(); lensQueryTask?.cancel()
+        let running = worker, query = lensQueryTask
+        await running?.value
+        await query?.value
+        worker = nil; lensQueryTask = nil; diskIndex = nil
+        Assets.cache.removeAllObjects()
+        UserDefaults.standard.synchronize()
+    }
     func leaveAnchor() {
+        guard !quitting else { return }
         worker?.cancel(); anchorSession.leave(); anchorPreparingNote = nil
         anchorPages = []; anchorPictureIDs = []
         activity = "已退出 Anchor。自动刷新保持关闭；需要时可手动继续。"

@@ -31,7 +31,7 @@ struct AnchorSetupView: View {
         AnchorInlinePreview(text: model.anchorText, picture: model.anchorPicture)
         HStack(spacing: 20) {
             Toggle("轮播全部 23 张角色图片", isOn: $model.anchorSlideshow)
-            Picker(model.anchorSlideshow ? "预览画面" : "固定画面", selection: $model.anchorPicture) {
+            Picker(model.anchorSlideshow ? "起始画面" : "固定画面", selection: $model.anchorPicture) {
                 ForEach(Assets.expressions) { Text($0.name).tag($0.id) }
             }.frame(maxWidth: 250)
             Spacer()
@@ -39,7 +39,7 @@ struct AnchorSetupView: View {
         HStack {
             VStack(alignment: .leading, spacing: 5) {
                 Text("文字只保存在本机，关闭或更新 Alter 后仍保留。").font(.callout)
-                Text("开始后冻结原有功能；退出按钮或 Esc 返回这里。").font(.caption).foregroundStyle(.secondary)
+                Text("开始后冻结原有功能；返回工具或 Esc 回到这里，退出 Alter 则关闭应用。").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             Button("启动 Anchor", systemImage: "play.fill") { model.enterAnchor() }
@@ -199,7 +199,8 @@ struct AnchorView: View {
                         HStack(spacing: 10) { Image(systemName: "sparkle"); Text("A N C H O R").font(.system(size: 11, weight: .medium)); Text("原有功能已冻结").font(.caption).foregroundStyle(.white.opacity(0.65)) }
                         Spacer()
                         Button { toggleFullscreen() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.glassAction().help("切换全屏")
-                        Button("退出 · Esc") { exit() }.glassAction()
+                        Button("返回工具 · Esc") { exit() }.glassAction()
+                        Button("退出 Alter") { NSApp.terminate(nil) }.glassAction()
                     }
                     Spacer()
                     HStack {

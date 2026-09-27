@@ -10,7 +10,7 @@ struct AlterMenuView: View {
             HStack { BrandImage(size:34); Text("Alter").font(.title2); Spacer(); Button { openWindow(id:"main"); NSApp.activate() } label: { Image(systemName:"arrow.up.forward.square") }.buttonStyle(.plain).help("打开 Alter") }
             if model.toolsFrozen {
                 Label("Anchor · 原有功能已冻结", systemImage:"moon.stars")
-                Button("退出 Anchor") { model.leaveAnchor(); openWindow(id:"main"); NSApp.activate() }
+                Button("返回工具") { model.leaveAnchor(); openWindow(id:"main"); NSApp.activate() }
             } else {
             if let status = model.systemStatus {
                 HStack { metric("CPU",String(format:"%.0f%%",status.cpu)); Spacer(); metric("内存",String(format:"%.0f%%",status.memory)); Spacer(); metric("可用空间",byteText(model.freeCapacity)) }
@@ -21,6 +21,8 @@ struct AlterMenuView: View {
             HStack { Button("刷新") { model.refreshCapacity(); model.refreshStatus() }.disabled(model.busy); Spacer(); Button("空间透镜") { model.page = .storage; openWindow(id:"main"); NSApp.activate() } }
             if model.busy { HStack { ProgressView().controlSize(.mini); Text(model.activity).font(.caption).lineLimit(2) } }
             }
+            Divider()
+            Button("退出 Alter") { NSApp.terminate(nil) }.disabled(model.quitting)
         }.padding(20).frame(width:340)
             .task { if !model.toolsFrozen && !model.busy && (model.statusDate == nil || Date().timeIntervalSince(model.statusDate!) > 30) { model.refreshStatus() } }
     }

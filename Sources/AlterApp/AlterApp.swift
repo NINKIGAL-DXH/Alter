@@ -4,6 +4,7 @@ import AlterCore
 
 @main struct AlterApp: App {
     @StateObject private var model = AppModel()
+    @NSApplicationDelegateAdaptor(AlterAppDelegate.self) private var lifecycle
     init() {
         if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--authorized-maintenance" {
             do {
@@ -14,6 +15,12 @@ import AlterCore
         }
 
         if CommandLine.arguments.contains("--smoke-test") {
+            // Exercise the production defaults initializer inside the actual app
+            // bundle. Isolated-suite unit tests cannot catch own-domain failures.
+            guard Bundle.main.bundleIdentifier == AnchorPreferences.domain else {
+                fputs("Unexpected preferences domain\n", stderr); exit(1)
+            }
+            _ = AnchorPreferences().loadText()
             guard Assets.expressions.count == 23,
                   Assets.expressions.allSatisfy({ Assets.image("Expressions/" + $0.file, pixels: 160) != nil }),
                   Assets.image("Brand/Alter.png", pixels: 64) != nil,
@@ -33,7 +40,7 @@ import AlterCore
     }
     var body: some Scene {
         WindowGroup("Alter", id: "main") {
-            ContentView().environmentObject(model).tint(Color(red: 0.64, green: 0.23, blue: 0.35))
+            ContentView().environmentObject(model).onAppear { lifecycle.model = model }.tint(Color(red: 0.64, green: 0.23, blue: 0.35))
                 .frame(minWidth: 960, minHeight: 700)
                 .preferredColorScheme(model.appearance == 0 ? nil : model.appearance == 1 ? .light : .dark)
         }.defaultSize(width: 1220, height: 860)
@@ -41,10 +48,10 @@ import AlterCore
             .commands {
                 CommandGroup(replacing: .appInfo) { Button("关于 Alter") { model.page = .settings }.disabled(model.toolsFrozen) }
                 CommandGroup(after: .appInfo) {
-                    Button(model.toolsFrozen ? "退出 Anchor" : "进入 Anchor") {
+                    Button(model.toolsFrozen ? "返回 Alter 工具" : "进入 Anchor") {
                         if model.toolsFrozen { model.leaveAnchor() } else { model.enterAnchor() }
-                    }.keyboardShortcut("a", modifiers: [.command, .shift]).disabled(model.busy)
-                    Button("退出 Anchor 屏保") { model.leaveAnchor() }.keyboardShortcut(.escape, modifiers: []).disabled(!model.toolsFrozen)
+                    }.keyboardShortcut("a", modifiers: [.command, .shift]).disabled(model.busy || model.quitting)
+                    Button("返回 Alter 工具") { model.leaveAnchor() }.keyboardShortcut(.escape, modifiers: []).disabled(!model.toolsFrozen || model.quitting)
                     Button("停止当前扫描") { model.cancel() }.keyboardShortcut(".", modifiers: .command).disabled(model.toolsFrozen || !model.busy) }
             }
         MenuBarExtra {

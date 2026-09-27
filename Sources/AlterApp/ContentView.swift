@@ -6,7 +6,8 @@ private let wine = Color(red: 0.64, green: 0.23, blue: 0.35)
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
-        if model.toolsFrozen { AnchorView() }
+        if model.quitting { ProgressView("正在退出 Alter…").frame(maxWidth: .infinity, maxHeight: .infinity) }
+        else if model.toolsFrozen { AnchorView() }
         else { ToolsContentView() }
     }
 }
